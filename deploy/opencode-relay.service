@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCode Relay Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/opencode-relay
+ExecStart=/opt/opencode-relay/opencode-relay-server
+Restart=always
+RestartSec=10
+Environment=PORT=3000
+Environment=DATABASE_PATH=/opt/opencode-relay/data/relay.db
+Environment=JWT_SECRET=CHANGE_ME_IN_PRODUCTION
+Environment=FRPS_HOST=20.24.67.195
+Environment=FRPS_PORT=7000
+Environment=FRPS_TOKEN=4e9431c0fe47ca83ff9f444a7de60e3c4c640b1ccd6f9084ba51236cde193ea5
+Environment=DOMAIN=zero469.dpdns.org
+
+[Install]
+WantedBy=multi-user.target

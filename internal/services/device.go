@@ -1,0 +1,84 @@
+package services
+
+import (
+	"github.com/zero469/opencode-relay-server/internal/config"
+	"github.com/zero469/opencode-relay-server/internal/database"
+	"github.com/zero469/opencode-relay-server/internal/models"
+)
+
+type DeviceService struct {
+	db  *database.DB
+	cfg *config.Config
+}
+
+func NewDeviceService(db *database.DB, cfg *config.Config) *DeviceService {
+	return &DeviceService{db: db, cfg: cfg}
+}
+
+func (s *DeviceService) Register(userID int64, name string) (*models.Device, error) {
+	subdomain := GenerateSubdomain()
+
+	for {
+		existing, _ := s.db.GetDeviceBySubdomain(subdomain)
+		if existing == nil {
+			break
+		}
+		subdomain = GenerateSubdomain()
+	}
+
+	return s.db.CreateDevice(userID, name, subdomain)
+}
+
+func (s *DeviceService) List(userID int64) ([]*models.Device, error) {
+	return s.db.GetDevicesByUserID(userID)
+}
+
+func (s *DeviceService) Get(userID, deviceID int64) (*models.Device, error) {
+	device, err := s.db.GetDeviceByID(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	if device.UserID != userID {
+		return nil, ErrUserNotFound
+	}
+	return device, nil
+}
+
+func (s *DeviceService) Update(userID, deviceID int64, name string) (*models.Device, error) {
+	device, err := s.Get(userID, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.db.UpdateDevice(device.ID, name)
+}
+
+func (s *DeviceService) Delete(userID, deviceID int64) error {
+	device, err := s.Get(userID, deviceID)
+	if err != nil {
+		return err
+	}
+	return s.db.DeleteDevice(device.ID)
+}
+
+func (s *DeviceService) Heartbeat(subdomain string) error {
+	device, err := s.db.GetDeviceBySubdomain(subdomain)
+	if err != nil {
+		return err
+	}
+	return s.db.UpdateDeviceHeartbeat(device.ID)
+}
+
+func (s *DeviceService) GetFrpcConfig(userID, deviceID int64, localPort string) (*models.FrpcConfig, error) {
+	device, err := s.Get(userID, deviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.FrpcConfig{
+		ServerAddr: s.cfg.FrpsHost,
+		ServerPort: s.cfg.FrpsPort,
+		Token:      s.cfg.FrpsToken,
+		Subdomain:  device.Subdomain,
+		LocalPort:  localPort,
+	}, nil
+}

@@ -1,0 +1,104 @@
+package services
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/zero469/opencode-relay-server/internal/database"
+	"github.com/zero469/opencode-relay-server/internal/models"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrEmailExists        = errors.New("email already exists")
+	ErrUserNotFound       = errors.New("user not found")
+)
+
+type AuthService struct {
+	db        *database.DB
+	jwtSecret []byte
+}
+
+func NewAuthService(db *database.DB, jwtSecret string) *AuthService {
+	return &AuthService{
+		db:        db,
+		jwtSecret: []byte(jwtSecret),
+	}
+}
+
+func (s *AuthService) Register(email, password string) (*models.User, error) {
+	existing, _ := s.db.GetUserByEmail(email)
+	if existing != nil {
+		return nil, ErrEmailExists
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.db.CreateUser(email, string(hash))
+}
+
+func (s *AuthService) Login(email, password string) (string, *models.User, error) {
+	user, err := s.db.GetUserByEmail(email)
+	if err != nil {
+		return "", nil, ErrInvalidCredentials
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return "", nil, ErrInvalidCredentials
+	}
+
+	token, err := s.generateToken(user.ID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return token, user, nil
+}
+
+func (s *AuthService) ValidateToken(tokenString string) (int64, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return 0, errors.New("invalid token")
+	}
+
+	userID, ok := claims["user_id"].(float64)
+	if !ok {
+		return 0, errors.New("invalid token claims")
+	}
+
+	return int64(userID), nil
+}
+
+func (s *AuthService) generateToken(userID int64) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"exp":     time.Now().Add(30 * 24 * time.Hour).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.jwtSecret)
+}
+
+func GenerateSubdomain() string {
+	bytes := make([]byte, 4)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
