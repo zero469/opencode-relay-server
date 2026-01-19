@@ -21,7 +21,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-RELAY_API_URL="${RELAY_API_URL:-https://relay.zero469.dpdns.org}"
+RELAY_API_URL="${RELAY_API_URL:-https://opencode-relay-server.fly.dev}"
 FRPC_VERSION="0.61.1"
 INSTALL_DIR="$HOME/.opencode-relay"
 CONFIG_FILE="$INSTALL_DIR/frpc.toml"
@@ -226,7 +226,7 @@ register_device() {
     
     echo -e "${GREEN}Device registered successfully!${NC}"
     echo -e "  Device ID: $DEVICE_ID"
-    echo -e "  Subdomain: ${YELLOW}${SUBDOMAIN}.zero469.dpdns.org${NC}"
+    echo -e "  Subdomain: ${YELLOW}${SUBDOMAIN}.liuyao16.dpdns.org${NC}"
 }
 
 # Get OpenCode local port
@@ -264,6 +264,8 @@ fetch_frpc_config() {
     SERVER_PORT=$(echo "$RESPONSE" | grep -o '"server_port":"[^"]*"' | cut -d'"' -f4)
     AUTH_TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
     SUBDOMAIN=$(echo "$RESPONSE" | grep -o '"subdomain":"[^"]*"' | cut -d'"' -f4)
+    AUTH_USER=$(echo "$RESPONSE" | grep -o '"auth_user":"[^"]*"' | cut -d'"' -f4)
+    AUTH_PASSWORD=$(echo "$RESPONSE" | grep -o '"auth_password":"[^"]*"' | cut -d'"' -f4)
     
     cat > "$CONFIG_FILE" << EOF
 # OpenCode Relay frpc configuration
@@ -281,9 +283,8 @@ type = "http"
 localIP = "127.0.0.1"
 localPort = $LOCAL_PORT
 subdomain = "$SUBDOMAIN"
-
-# Heartbeat to relay server (every 30 seconds)
-# This is handled by a separate process
+httpUser = "$AUTH_USER"
+httpPassword = "$AUTH_PASSWORD"
 EOF
     
     chmod 600 "$CONFIG_FILE"
@@ -480,7 +481,7 @@ main() {
     echo ""
     echo "Your OpenCode instance is now accessible at:"
     SUBDOMAIN=$(grep 'subdomain = ' "$CONFIG_FILE" | cut -d'"' -f2)
-    echo -e "  ${YELLOW}https://${SUBDOMAIN}.zero469.dpdns.org${NC}"
+    echo -e "  ${YELLOW}http://${SUBDOMAIN}.liuyao16.dpdns.org${NC}"
     echo ""
     echo "Management commands:"
     if [ "$OS" = "darwin" ]; then
