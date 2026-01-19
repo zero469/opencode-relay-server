@@ -23,9 +23,14 @@ type Device struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type SendVerificationRequest struct {
+	Email string `json:"email"`
+}
+
 type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Code     string `json:"code"`
 }
 
 type LoginRequest struct {

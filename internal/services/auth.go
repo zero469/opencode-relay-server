@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,6 +18,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrEmailExists        = errors.New("email already exists")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrInvalidCode        = errors.New("invalid or expired verification code")
 )
 
 type AuthService struct {
@@ -31,7 +33,12 @@ func NewAuthService(db *database.DB, jwtSecret string) *AuthService {
 	}
 }
 
-func (s *AuthService) Register(email, password string) (*models.User, error) {
+func (s *AuthService) Register(email, password, code string) (*models.User, error) {
+	valid, err := s.db.GetValidVerificationCode(email, code)
+	if err != nil || !valid {
+		return nil, ErrInvalidCode
+	}
+
 	existing, _ := s.db.GetUserByEmail(email)
 	if existing != nil {
 		return nil, ErrEmailExists
@@ -42,7 +49,13 @@ func (s *AuthService) Register(email, password string) (*models.User, error) {
 		return nil, err
 	}
 
-	return s.db.CreateUser(email, string(hash))
+	user, err := s.db.CreateUser(email, string(hash))
+	if err != nil {
+		return nil, err
+	}
+
+	s.db.MarkVerificationCodeUsed(email, code)
+	return user, nil
 }
 
 func (s *AuthService) Login(email, password string) (string, *models.User, error) {
@@ -107,4 +120,21 @@ func GenerateRandomString(length int) string {
 	bytes := make([]byte, length)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)[:length]
+}
+
+func GenerateVerificationCode() string {
+	code := make([]byte, 3)
+	rand.Read(code)
+	num := int(code[0])<<16 | int(code[1])<<8 | int(code[2])
+	return fmt.Sprintf("%06d", num%1000000)
+}
+
+func (s *AuthService) CreateVerificationCode(email string) (string, error) {
+	code := GenerateVerificationCode()
+	expiresAt := time.Now().Add(10 * time.Minute)
+	err := s.db.CreateVerificationCode(email, code, expiresAt)
+	if err != nil {
+		return "", err
+	}
+	return code, nil
 }

@@ -60,6 +60,16 @@ func migrate(db *sql.DB) error {
 
 	CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
 	CREATE INDEX IF NOT EXISTS idx_devices_subdomain ON devices(subdomain);
+
+	CREATE TABLE IF NOT EXISTS verification_codes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT NOT NULL,
+		code TEXT NOT NULL,
+		expires_at DATETIME NOT NULL,
+		used BOOLEAN DEFAULT FALSE,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
 	`
 
 	_, err := db.Exec(schema)

@@ -23,14 +23,16 @@ func main() {
 
 	authService := services.NewAuthService(db, cfg.JWTSecret)
 	deviceService := services.NewDeviceService(db, cfg)
+	emailService := services.NewEmailService(cfg)
 
-	authHandler := handlers.NewAuthHandler(authService)
+	authHandler := handlers.NewAuthHandler(authService, emailService)
 	deviceHandler := handlers.NewDeviceHandler(deviceService)
 
 	authMiddleware := middleware.Auth(authService)
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("POST /api/send-verification", authHandler.SendVerification)
 	mux.HandleFunc("POST /api/register", authHandler.Register)
 	mux.HandleFunc("POST /api/login", authHandler.Login)
 
@@ -47,6 +49,8 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	mux.HandleFunc("GET /install.sh", handlers.ServeInstallScript)
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)

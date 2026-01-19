@@ -3,6 +3,7 @@ package services_test
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/zero469/opencode-relay-server/internal/database"
 	"github.com/zero469/opencode-relay-server/internal/services"
@@ -15,6 +16,14 @@ func setupTestDB(t *testing.T) *database.DB {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 	return db
+}
+
+func createTestVerificationCode(t *testing.T, db *database.DB, email, code string) {
+	t.Helper()
+	err := db.CreateVerificationCode(email, code, time.Now().Add(10*time.Minute))
+	if err != nil {
+		t.Fatalf("Failed to create verification code: %v", err)
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -31,6 +40,8 @@ func TestAuthService_Register(t *testing.T) {
 		name      string
 		email     string
 		password  string
+		code      string
+		setupCode bool
 		wantErr   error
 		wantEmail string
 	}{
@@ -38,20 +49,36 @@ func TestAuthService_Register(t *testing.T) {
 			name:      "successful registration",
 			email:     "test@example.com",
 			password:  "password123",
+			code:      "123456",
+			setupCode: true,
 			wantErr:   nil,
 			wantEmail: "test@example.com",
 		},
 		{
-			name:     "duplicate email",
-			email:    "test@example.com",
-			password: "password456",
-			wantErr:  services.ErrEmailExists,
+			name:      "invalid verification code",
+			email:     "invalid@example.com",
+			password:  "password123",
+			code:      "000000",
+			setupCode: false,
+			wantErr:   services.ErrInvalidCode,
+		},
+		{
+			name:      "duplicate email",
+			email:     "test@example.com",
+			password:  "password456",
+			code:      "654321",
+			setupCode: true,
+			wantErr:   services.ErrEmailExists,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user, err := auth.Register(tt.email, tt.password)
+			if tt.setupCode {
+				createTestVerificationCode(t, db, tt.email, tt.code)
+			}
+
+			user, err := auth.Register(tt.email, tt.password, tt.code)
 
 			if tt.wantErr != nil {
 				if err != tt.wantErr {
@@ -82,7 +109,8 @@ func TestAuthService_Login(t *testing.T) {
 
 	auth := services.NewAuthService(db, "test-secret")
 
-	auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	auth.Register("test@example.com", "password123", "123456")
 
 	tests := []struct {
 		name     string
@@ -143,7 +171,8 @@ func TestAuthService_ValidateToken(t *testing.T) {
 
 	auth := services.NewAuthService(db, "test-secret")
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 	token, _, _ := auth.Login("test@example.com", "password123")
 
 	tests := []struct {
@@ -197,10 +226,10 @@ func TestAuthService_ValidateToken(t *testing.T) {
 
 func TestGenerateSubdomain(t *testing.T) {
 	subdomains := make(map[string]bool)
-	
+
 	for i := 0; i < 100; i++ {
 		subdomain := services.GenerateSubdomain()
-		
+
 		if len(subdomain) != 8 {
 			t.Errorf("GenerateSubdomain() length = %d, want 8", len(subdomain))
 		}
@@ -209,5 +238,25 @@ func TestGenerateSubdomain(t *testing.T) {
 			t.Errorf("GenerateSubdomain() generated duplicate: %s", subdomain)
 		}
 		subdomains[subdomain] = true
+	}
+}
+
+func TestGenerateVerificationCode(t *testing.T) {
+	codes := make(map[string]bool)
+
+	for i := 0; i < 100; i++ {
+		code := services.GenerateVerificationCode()
+
+		if len(code) != 6 {
+			t.Errorf("GenerateVerificationCode() length = %d, want 6", len(code))
+		}
+
+		for _, c := range code {
+			if c < '0' || c > '9' {
+				t.Errorf("GenerateVerificationCode() contains non-digit: %s", code)
+			}
+		}
+
+		codes[code] = true
 	}
 }

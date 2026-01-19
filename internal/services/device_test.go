@@ -2,10 +2,21 @@ package services_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/zero469/opencode-relay-server/internal/config"
 	"github.com/zero469/opencode-relay-server/internal/services"
 )
+
+func registerTestUser(t *testing.T, db interface {
+	CreateVerificationCode(email, code string, expiresAt time.Time) error
+}, auth *services.AuthService, email, password string) *services.AuthService {
+	t.Helper()
+	code := "123456"
+	db.CreateVerificationCode(email, code, time.Now().Add(10*time.Minute))
+	auth.Register(email, password, code)
+	return auth
+}
 
 func TestDeviceService_Register(t *testing.T) {
 	db := setupTestDB(t)
@@ -21,7 +32,8 @@ func TestDeviceService_Register(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 
 	tests := []struct {
 		name       string
@@ -82,8 +94,10 @@ func TestDeviceService_List(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user1, _ := auth.Register("user1@example.com", "password123")
-	user2, _ := auth.Register("user2@example.com", "password123")
+	createTestVerificationCode(t, db, "user1@example.com", "111111")
+	createTestVerificationCode(t, db, "user2@example.com", "222222")
+	user1, _ := auth.Register("user1@example.com", "password123", "111111")
+	user2, _ := auth.Register("user2@example.com", "password123", "222222")
 
 	deviceSvc.Register(user1.ID, "Device1")
 	deviceSvc.Register(user1.ID, "Device2")
@@ -116,8 +130,10 @@ func TestDeviceService_Get(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user1, _ := auth.Register("user1@example.com", "password123")
-	user2, _ := auth.Register("user2@example.com", "password123")
+	createTestVerificationCode(t, db, "user1@example.com", "111111")
+	createTestVerificationCode(t, db, "user2@example.com", "222222")
+	user1, _ := auth.Register("user1@example.com", "password123", "111111")
+	user2, _ := auth.Register("user2@example.com", "password123", "222222")
 
 	device, _ := deviceSvc.Register(user1.ID, "Device1")
 
@@ -147,7 +163,8 @@ func TestDeviceService_Update(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 	device, _ := deviceSvc.Register(user.ID, "OldName")
 
 	updated, err := deviceSvc.Update(user.ID, device.ID, "NewName")
@@ -172,7 +189,8 @@ func TestDeviceService_Delete(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 	device, _ := deviceSvc.Register(user.ID, "Device1")
 
 	err := deviceSvc.Delete(user.ID, device.ID)
@@ -194,7 +212,8 @@ func TestDeviceService_Heartbeat(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 	device, _ := deviceSvc.Register(user.ID, "Device1")
 
 	err := deviceSvc.Heartbeat(device.Subdomain)
@@ -226,7 +245,8 @@ func TestDeviceService_GetFrpcConfig(t *testing.T) {
 	auth := services.NewAuthService(db, "test-secret")
 	deviceSvc := services.NewDeviceService(db, cfg)
 
-	user, _ := auth.Register("test@example.com", "password123")
+	createTestVerificationCode(t, db, "test@example.com", "123456")
+	user, _ := auth.Register("test@example.com", "password123", "123456")
 	device, _ := deviceSvc.Register(user.ID, "Device1")
 
 	frpcConfig, err := deviceSvc.GetFrpcConfig(user.ID, device.ID, "4096")

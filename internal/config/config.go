@@ -12,6 +12,8 @@ type Config struct {
 	FrpsPort     string
 	FrpsToken    string
 	Domain       string
+	ResendAPIKey string
+	EmailFrom    string
 }
 
 func Load() *Config {
@@ -23,6 +25,8 @@ func Load() *Config {
 		FrpsPort:     getEnv("FRPS_PORT", "7000"),
 		FrpsToken:    getEnv("FRPS_TOKEN", ""),
 		Domain:       getEnv("FRPS_DOMAIN", "liuyao16.dpdns.org"),
+		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
+		EmailFrom:    getEnv("EMAIL_FROM", "OpenCode <noreply@liuyao16.dpdns.org>"),
 	}
 }
 

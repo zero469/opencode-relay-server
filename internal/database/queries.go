@@ -154,3 +154,36 @@ func (db *DB) MarkOfflineDevices(timeout time.Duration) error {
 	)
 	return err
 }
+
+func (db *DB) CreateVerificationCode(email, code string, expiresAt time.Time) error {
+	_, err := db.Exec(
+		"INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?)",
+		email, code, expiresAt,
+	)
+	return err
+}
+
+func (db *DB) GetValidVerificationCode(email, code string) (bool, error) {
+	var count int
+	err := db.QueryRow(
+		"SELECT COUNT(*) FROM verification_codes WHERE email = ? AND code = ? AND expires_at > ? AND used = FALSE",
+		email, code, time.Now(),
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (db *DB) MarkVerificationCodeUsed(email, code string) error {
+	_, err := db.Exec(
+		"UPDATE verification_codes SET used = TRUE WHERE email = ? AND code = ?",
+		email, code,
+	)
+	return err
+}
+
+func (db *DB) DeleteExpiredVerificationCodes() error {
+	_, err := db.Exec("DELETE FROM verification_codes WHERE expires_at < ?", time.Now())
+	return err
+}
