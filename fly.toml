@@ -1,0 +1,21 @@
+app = 'opencode-relay-server'
+primary_region = 'sin'
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+[mounts]
+  source = "data"
+  destination = "/app/data"
+
+[env]
+  PORT = "8080"
+  DATABASE_PATH = "/app/data/relay.db"
+  DOMAIN = "zero469.dpdns.org"

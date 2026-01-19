@@ -26,7 +26,10 @@ func (s *DeviceService) Register(userID int64, name string) (*models.Device, err
 		subdomain = GenerateSubdomain()
 	}
 
-	return s.db.CreateDevice(userID, name, subdomain)
+	authUser := GenerateRandomString(8)
+	authPassword := GenerateRandomString(32)
+
+	return s.db.CreateDevice(userID, name, subdomain, authUser, authPassword)
 }
 
 func (s *DeviceService) List(userID int64) ([]*models.Device, error) {
@@ -75,10 +78,13 @@ func (s *DeviceService) GetFrpcConfig(userID, deviceID int64, localPort string) 
 	}
 
 	return &models.FrpcConfig{
-		ServerAddr: s.cfg.FrpsHost,
-		ServerPort: s.cfg.FrpsPort,
-		Token:      s.cfg.FrpsToken,
-		Subdomain:  device.Subdomain,
-		LocalPort:  localPort,
+		ServerAddr:   s.cfg.FrpsHost,
+		ServerPort:   s.cfg.FrpsPort,
+		Token:        s.cfg.FrpsToken,
+		Subdomain:    device.Subdomain,
+		Domain:       s.cfg.Domain,
+		LocalPort:    localPort,
+		AuthUser:     device.AuthUser,
+		AuthPassword: device.AuthPassword,
 	}, nil
 }

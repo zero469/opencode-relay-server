@@ -102,3 +102,9 @@ func GenerateSubdomain() string {
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
+
+func GenerateRandomString(length int) string {
+	bytes := make([]byte, length)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)[:length]
+}

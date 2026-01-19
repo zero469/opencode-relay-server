@@ -11,14 +11,16 @@ type User struct {
 }
 
 type Device struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	Name      string    `json:"name"`
-	Subdomain string    `json:"subdomain"`
-	Online    bool      `json:"online"`
-	LastSeen  time.Time `json:"last_seen"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           int64     `json:"id"`
+	UserID       int64     `json:"user_id"`
+	Name         string    `json:"name"`
+	Subdomain    string    `json:"subdomain"`
+	AuthUser     string    `json:"auth_user"`
+	AuthPassword string    `json:"auth_password"`
+	Online       bool      `json:"online"`
+	LastSeen     time.Time `json:"last_seen"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type RegisterRequest struct {
@@ -45,11 +47,14 @@ type DeviceUpdateRequest struct {
 }
 
 type FrpcConfig struct {
-	ServerAddr string `json:"server_addr"`
-	ServerPort string `json:"server_port"`
-	Token      string `json:"token"`
-	Subdomain  string `json:"subdomain"`
-	LocalPort  string `json:"local_port"`
+	ServerAddr   string `json:"server_addr"`
+	ServerPort   string `json:"server_port"`
+	Token        string `json:"token"`
+	Subdomain    string `json:"subdomain"`
+	Domain       string `json:"domain"`
+	LocalPort    string `json:"local_port"`
+	AuthUser     string `json:"auth_user"`
+	AuthPassword string `json:"auth_password"`
 }
 
 type ErrorResponse struct {

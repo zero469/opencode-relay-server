@@ -48,10 +48,10 @@ func (db *DB) GetUserByEmail(email string) (*models.User, error) {
 	return user, nil
 }
 
-func (db *DB) CreateDevice(userID int64, name, subdomain string) (*models.Device, error) {
+func (db *DB) CreateDevice(userID int64, name, subdomain, authUser, authPassword string) (*models.Device, error) {
 	result, err := db.Exec(
-		"INSERT INTO devices (user_id, name, subdomain) VALUES (?, ?, ?)",
-		userID, name, subdomain,
+		"INSERT INTO devices (user_id, name, subdomain, auth_user, auth_password) VALUES (?, ?, ?, ?, ?)",
+		userID, name, subdomain, authUser, authPassword,
 	)
 	if err != nil {
 		return nil, err
@@ -69,9 +69,9 @@ func (db *DB) GetDeviceByID(id int64) (*models.Device, error) {
 	device := &models.Device{}
 	var lastSeen sql.NullTime
 	err := db.QueryRow(
-		"SELECT id, user_id, name, subdomain, online, last_seen, created_at, updated_at FROM devices WHERE id = ?",
+		"SELECT id, user_id, name, subdomain, auth_user, auth_password, online, last_seen, created_at, updated_at FROM devices WHERE id = ?",
 		id,
-	).Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt)
+	).Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.AuthUser, &device.AuthPassword, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +85,9 @@ func (db *DB) GetDeviceBySubdomain(subdomain string) (*models.Device, error) {
 	device := &models.Device{}
 	var lastSeen sql.NullTime
 	err := db.QueryRow(
-		"SELECT id, user_id, name, subdomain, online, last_seen, created_at, updated_at FROM devices WHERE subdomain = ?",
+		"SELECT id, user_id, name, subdomain, auth_user, auth_password, online, last_seen, created_at, updated_at FROM devices WHERE subdomain = ?",
 		subdomain,
-	).Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt)
+	).Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.AuthUser, &device.AuthPassword, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (db *DB) GetDeviceBySubdomain(subdomain string) (*models.Device, error) {
 
 func (db *DB) GetDevicesByUserID(userID int64) ([]*models.Device, error) {
 	rows, err := db.Query(
-		"SELECT id, user_id, name, subdomain, online, last_seen, created_at, updated_at FROM devices WHERE user_id = ? ORDER BY created_at DESC",
+		"SELECT id, user_id, name, subdomain, auth_user, auth_password, online, last_seen, created_at, updated_at FROM devices WHERE user_id = ? ORDER BY created_at DESC",
 		userID,
 	)
 	if err != nil {
@@ -111,7 +111,7 @@ func (db *DB) GetDevicesByUserID(userID int64) ([]*models.Device, error) {
 	for rows.Next() {
 		device := &models.Device{}
 		var lastSeen sql.NullTime
-		if err := rows.Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt); err != nil {
+		if err := rows.Scan(&device.ID, &device.UserID, &device.Name, &device.Subdomain, &device.AuthUser, &device.AuthPassword, &device.Online, &lastSeen, &device.CreatedAt, &device.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if lastSeen.Valid {

@@ -22,7 +22,7 @@ func Load() *Config {
 		FrpsHost:     getEnv("FRPS_HOST", "127.0.0.1"),
 		FrpsPort:     getEnv("FRPS_PORT", "7000"),
 		FrpsToken:    getEnv("FRPS_TOKEN", ""),
-		Domain:       getEnv("DOMAIN", "zero469.dpdns.org"),
+		Domain:       getEnv("FRPS_DOMAIN", "liuyao16.dpdns.org"),
 	}
 }
 

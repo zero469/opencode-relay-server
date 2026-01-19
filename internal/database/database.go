@@ -49,6 +49,8 @@ func migrate(db *sql.DB) error {
 		user_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
 		subdomain TEXT UNIQUE NOT NULL,
+		auth_user TEXT NOT NULL DEFAULT '',
+		auth_password TEXT NOT NULL DEFAULT '',
 		online BOOLEAN DEFAULT FALSE,
 		last_seen DATETIME,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -61,5 +63,19 @@ func migrate(db *sql.DB) error {
 	`
 
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: Add auth columns if they don't exist (for existing databases)
+	migrations := []string{
+		`ALTER TABLE devices ADD COLUMN auth_user TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE devices ADD COLUMN auth_password TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, m := range migrations {
+		// Ignore errors (column may already exist)
+		db.Exec(m)
+	}
+
+	return nil
 }

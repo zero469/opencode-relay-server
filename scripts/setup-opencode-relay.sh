@@ -260,8 +260,8 @@ fetch_frpc_config() {
     fi
     
     # Parse JSON and generate TOML config
-    SERVER_ADDR=$(echo "$RESPONSE" | grep -o '"serverAddr":"[^"]*"' | cut -d'"' -f4)
-    SERVER_PORT=$(echo "$RESPONSE" | grep -o '"serverPort":"[^"]*"' | cut -d'"' -f4)
+    SERVER_ADDR=$(echo "$RESPONSE" | grep -o '"server_addr":"[^"]*"' | cut -d'"' -f4)
+    SERVER_PORT=$(echo "$RESPONSE" | grep -o '"server_port":"[^"]*"' | cut -d'"' -f4)
     AUTH_TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
     SUBDOMAIN=$(echo "$RESPONSE" | grep -o '"subdomain":"[^"]*"' | cut -d'"' -f4)
     
