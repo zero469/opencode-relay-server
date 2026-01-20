@@ -206,7 +206,7 @@ httpUser = "$($response.auth_user)"
 httpPassword = "$($response.auth_password)"
 "@
         
-        $config | Out-File -FilePath $CONFIG_FILE -Encoding utf8
+        $config | Out-File -FilePath $CONFIG_FILE -Encoding ascii
         
         Write-ColorOutput "frpc configuration saved to $CONFIG_FILE" "Green"
         
