@@ -51,6 +51,7 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /install.sh", handlers.ServeInstallScript)
+	mux.HandleFunc("GET /install.ps1", handlers.ServeInstallScriptPS1)
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
