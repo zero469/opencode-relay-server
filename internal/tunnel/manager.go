@@ -47,7 +47,7 @@ type Manager struct {
 	connections  map[string]*TunnelConnection
 	mu           sync.RWMutex
 	upgrader     websocket.Upgrader
-	onConnect    func(subdomain string)
+	onHeartbeat  func(subdomain string)
 	onDisconnect func(subdomain string)
 }
 
@@ -64,8 +64,8 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) SetCallbacks(onConnect, onDisconnect func(subdomain string)) {
-	m.onConnect = onConnect
+func (m *Manager) SetCallbacks(onHeartbeat, onDisconnect func(subdomain string)) {
+	m.onHeartbeat = onHeartbeat
 	m.onDisconnect = onDisconnect
 }
 
@@ -92,12 +92,12 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 
 	log.Printf("[tunnel] Client connected: %s", subdomain)
 
-	if m.onConnect != nil {
-		m.onConnect(subdomain)
+	if m.onHeartbeat != nil {
+		m.onHeartbeat(subdomain)
 	}
 
 	go tc.readLoop(m)
-	go tc.pingLoop()
+	go tc.pingLoop(m)
 
 	return nil
 }
@@ -209,7 +209,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 	}
 }
 
-func (tc *TunnelConnection) pingLoop() {
+func (tc *TunnelConnection) pingLoop(m *Manager) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -221,6 +221,9 @@ func (tc *TunnelConnection) pingLoop() {
 			tc.writeMu.Unlock()
 			if err != nil {
 				return
+			}
+			if m.onHeartbeat != nil {
+				m.onHeartbeat(tc.subdomain)
 			}
 		case <-tc.closeChan:
 			return

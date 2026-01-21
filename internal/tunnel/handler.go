@@ -16,13 +16,25 @@ type Handler struct {
 func NewHandler(manager *Manager, db *database.DB) *Handler {
 	manager.SetCallbacks(
 		func(subdomain string) {
-			if device, err := db.GetDeviceBySubdomain(subdomain); err == nil {
-				db.UpdateDeviceHeartbeat(device.ID)
+			device, err := db.GetDeviceBySubdomain(subdomain)
+			if err != nil {
+				log.Printf("[tunnel] heartbeat: GetDeviceBySubdomain failed for %s: %v", subdomain, err)
+				return
+			}
+			if err := db.UpdateDeviceHeartbeat(device.ID); err != nil {
+				log.Printf("[tunnel] heartbeat: UpdateDeviceHeartbeat failed for %s (id=%d): %v", subdomain, device.ID, err)
 			}
 		},
 		func(subdomain string) {
-			if device, err := db.GetDeviceBySubdomain(subdomain); err == nil {
-				db.MarkDeviceOffline(device.ID)
+			device, err := db.GetDeviceBySubdomain(subdomain)
+			if err != nil {
+				log.Printf("[tunnel] onDisconnect: GetDeviceBySubdomain failed for %s: %v", subdomain, err)
+				return
+			}
+			if err := db.MarkDeviceOffline(device.ID); err != nil {
+				log.Printf("[tunnel] onDisconnect: MarkDeviceOffline failed for %s (id=%d): %v", subdomain, device.ID, err)
+			} else {
+				log.Printf("[tunnel] onDisconnect: Device %s (id=%d) marked offline", subdomain, device.ID)
 			}
 		},
 	)

@@ -22,6 +22,14 @@ func main() {
 	}
 	defer db.Close()
 
+	// Mark all devices offline on server startup
+	// They will be marked online again when tunnel-clients reconnect
+	if count, err := db.MarkAllDevicesOffline(); err != nil {
+		log.Printf("Warning: failed to mark devices offline on startup: %v", err)
+	} else if count > 0 {
+		log.Printf("Marked %d device(s) offline on server startup", count)
+	}
+
 	authService := services.NewAuthService(db, cfg.JWTSecret)
 	deviceService := services.NewDeviceService(db, cfg)
 	emailService := services.NewEmailService(cfg)
