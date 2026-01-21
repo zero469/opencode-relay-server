@@ -155,6 +155,14 @@ func (db *DB) MarkOfflineDevices(timeout time.Duration) error {
 	return err
 }
 
+func (db *DB) MarkDeviceOffline(id int64) error {
+	_, err := db.Exec(
+		"UPDATE devices SET online = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		id,
+	)
+	return err
+}
+
 func (db *DB) CreateVerificationCode(email, code string, expiresAt time.Time) error {
 	_, err := db.Exec(
 		"INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?)",

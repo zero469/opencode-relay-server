@@ -10,6 +10,7 @@ import (
 	"github.com/zero469/opencode-relay-server/internal/handlers"
 	"github.com/zero469/opencode-relay-server/internal/middleware"
 	"github.com/zero469/opencode-relay-server/internal/services"
+	"github.com/zero469/opencode-relay-server/internal/tunnel"
 )
 
 func main() {
@@ -24,6 +25,9 @@ func main() {
 	authService := services.NewAuthService(db, cfg.JWTSecret)
 	deviceService := services.NewDeviceService(db, cfg)
 	emailService := services.NewEmailService(cfg)
+
+	tunnelManager := tunnel.NewManager()
+	tunnelHandler := tunnel.NewHandler(tunnelManager, db)
 
 	authHandler := handlers.NewAuthHandler(authService, emailService)
 	deviceHandler := handlers.NewDeviceHandler(deviceService)
@@ -44,6 +48,9 @@ func main() {
 	mux.Handle("PUT /api/devices/{id}", authMiddleware(http.HandlerFunc(deviceHandler.Update)))
 	mux.Handle("DELETE /api/devices/{id}", authMiddleware(http.HandlerFunc(deviceHandler.Delete)))
 	mux.Handle("GET /api/devices/{id}/frpc-config", authMiddleware(http.HandlerFunc(deviceHandler.GetFrpcConfig)))
+
+	mux.HandleFunc("GET /api/tunnel/{subdomain}", tunnelHandler.HandleTunnelConnect)
+	mux.HandleFunc("/proxy/", tunnelHandler.HandleProxy)
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

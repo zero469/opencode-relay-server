@@ -1,22 +1,16 @@
 #
 # OpenCode Relay Client Setup Script for Windows
-# This script sets up frpc on your Windows PC to enable remote access via OpenCode Anywhere app
+# This script sets up tunnel-client on your Windows PC to enable remote access via OpenCode Anywhere app
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/zero469/opencode-relay-server/main/scripts/setup-opencode-relay.ps1 | iex
-#
-# Or download and run:
-#   .\setup-opencode-relay.ps1
+#   irm https://opencode-relay-server.fly.dev/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
 
-# Configuration
 $RELAY_API_URL = if ($env:RELAY_API_URL) { $env:RELAY_API_URL } else { "https://opencode-relay-server.fly.dev" }
-$FRPC_VERSION = "0.61.1"
 $INSTALL_DIR = "$env:USERPROFILE\.opencode-relay"
-$CONFIG_FILE = "$INSTALL_DIR\frpc.toml"
-$LOG_FILE = "$INSTALL_DIR\frpc.log"
+$LOG_FILE = "$INSTALL_DIR\tunnel.log"
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
@@ -29,33 +23,42 @@ function Detect-Platform {
     return $arch
 }
 
-function Install-Frpc {
+function Install-TunnelClient {
     param([string]$Arch)
     
-    Write-ColorOutput "Installing frpc v$FRPC_VERSION..." "Cyan"
+    Write-ColorOutput "Installing tunnel-client..." "Cyan"
     
     if (-not (Test-Path $INSTALL_DIR)) {
         New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
     }
     
-    $downloadUrl = "https://github.com/fatedier/frp/releases/download/v$FRPC_VERSION/frp_${FRPC_VERSION}_windows_$Arch.zip"
-    $tempZip = "$env:TEMP\frp.zip"
-    $tempDir = "$env:TEMP\frp_extract"
+    $fileName = "tunnel-client-windows-$Arch.exe"
+    $urls = @(
+        "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
+        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
+        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
+    )
     
-    Write-Host "Downloading from: $downloadUrl"
+    $downloaded = $false
+    foreach ($url in $urls) {
+        Write-Host "Trying: $url"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile "$INSTALL_DIR\tunnel-client.exe" -UseBasicParsing -TimeoutSec 60
+            $downloaded = $true
+            Write-ColorOutput "Download successful!" "Green"
+            break
+        } catch {
+            Write-ColorOutput "Failed, trying next mirror..." "Yellow"
+        }
+    }
     
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempZip -UseBasicParsing
+    if (-not $downloaded) {
+        Write-ColorOutput "All download sources failed. Please download manually from:" "Red"
+        Write-Host "https://github.com/zero469/opencode-relay-server/releases/latest"
+        exit 1
+    }
     
-    if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
-    Expand-Archive -Path $tempZip -DestinationPath $tempDir -Force
-    
-    $frpcPath = Get-ChildItem -Path $tempDir -Recurse -Filter "frpc.exe" | Select-Object -First 1
-    Copy-Item -Path $frpcPath.FullName -Destination "$INSTALL_DIR\frpc.exe" -Force
-    
-    Remove-Item -Path $tempZip -Force
-    Remove-Item -Recurse -Force $tempDir
-    
-    Write-ColorOutput "frpc installed to $INSTALL_DIR\frpc.exe" "Green"
+    Write-ColorOutput "tunnel-client installed to $INSTALL_DIR\tunnel-client.exe" "Green"
 }
 
 function Authenticate {
@@ -72,42 +75,12 @@ function Authenticate {
         }
     }
     
-    $hasAccount = Read-Host "Do you have an account? (y/n)"
-    
-    $email = $null
-    $password = $null
-    
-    if ($hasAccount -ne "y") {
-        Write-ColorOutput "Creating new account..." "Yellow"
-        $email = Read-Host "Email"
-        $password = Read-Host "Password" -AsSecureString
-        $passwordConfirm = Read-Host "Confirm Password" -AsSecureString
-        
-        $passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-        $passwordConfirmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordConfirm))
-        
-        if ($passwordPlain -ne $passwordConfirmPlain) {
-            Write-ColorOutput "Passwords do not match!" "Red"
-            exit 1
-        }
-        
-        $body = @{ email = $email; password = $passwordPlain } | ConvertTo-Json
-        try {
-            $response = Invoke-RestMethod -Uri "$RELAY_API_URL/api/register" -Method Post -Body $body -ContentType "application/json"
-            Write-ColorOutput "Account created successfully!" "Green"
-        } catch {
-            Write-ColorOutput "Registration failed: $_" "Red"
-            exit 1
-        }
-    }
-    
     Write-ColorOutput "Logging in..." "Yellow"
+    Write-Host "(Don't have an account? Register via the OpenCode Anywhere iOS app first)"
     
-    if (-not $email) { $email = Read-Host "Email" }
-    if (-not $password) { 
-        $password = Read-Host "Password" -AsSecureString 
-        $passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-    }
+    $email = Read-Host "Email"
+    $password = Read-Host "Password" -AsSecureString
+    $passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
     
     $body = @{ email = $email; password = $passwordPlain } | ConvertTo-Json
     try {
@@ -149,12 +122,17 @@ function Register-Device {
         $response = Invoke-RestMethod -Uri "$RELAY_API_URL/api/devices" -Method Post -Body $body -ContentType "application/json" -Headers $headers
         $deviceId = $response.id
         $subdomain = $response.subdomain
+        $authUser = $response.auth_user
+        $authPassword = $response.auth_password
         
         $deviceId | Out-File -FilePath $deviceIdFile -Encoding utf8 -NoNewline
+        $subdomain | Out-File -FilePath "$INSTALL_DIR\subdomain" -Encoding utf8 -NoNewline
+        $authUser | Out-File -FilePath "$INSTALL_DIR\auth_user" -Encoding utf8 -NoNewline
+        $authPassword | Out-File -FilePath "$INSTALL_DIR\auth_password" -Encoding utf8 -NoNewline
         
         Write-ColorOutput "Device registered successfully!" "Green"
         Write-Host "  Device ID: $deviceId"
-        Write-ColorOutput "  Subdomain: $subdomain.liuyao16.dpdns.org" "Yellow"
+        Write-ColorOutput "  Subdomain: $subdomain" "Yellow"
         
         return $deviceId
     } catch {
@@ -175,90 +153,64 @@ function Get-OpenCodePort {
     return $port
 }
 
-function Fetch-FrpcConfig {
-    param([string]$Token, [string]$DeviceId, [string]$LocalPort)
+function Load-DeviceConfig {
+    param([string]$Token)
     
-    Write-Host ""
-    Write-ColorOutput "Fetching frpc configuration..." "Cyan"
-    
-    $headers = @{ Authorization = "Bearer $Token" }
-    
-    try {
-        $response = Invoke-RestMethod -Uri "$RELAY_API_URL/api/devices/$DeviceId/frpc-config?local_port=$LocalPort" -Headers $headers
-        
-        $config = @"
-# OpenCode Relay frpc configuration
-# Generated by setup script
-
-serverAddr = "$($response.server_addr)"
-serverPort = $($response.server_port)
-
-auth.method = "token"
-auth.token = "$($response.token)"
-
-[[proxies]]
-name = "opencode-$($response.subdomain)"
-type = "http"
-localIP = "127.0.0.1"
-localPort = $LocalPort
-subdomain = "$($response.subdomain)"
-httpUser = "$($response.auth_user)"
-httpPassword = "$($response.auth_password)"
-"@
-        
-        $config | Out-File -FilePath $CONFIG_FILE -Encoding ascii
-        
-        Write-ColorOutput "frpc configuration saved to $CONFIG_FILE" "Green"
-        
-        return $response.subdomain
-    } catch {
-        Write-ColorOutput "Failed to fetch frpc config: $_" "Red"
+    $deviceIdFile = "$INSTALL_DIR\device_id"
+    if (-not (Test-Path $deviceIdFile)) {
+        Write-ColorOutput "Device not registered. Please run setup first." "Red"
         exit 1
+    }
+    
+    $script:DeviceId = Get-Content $deviceIdFile
+    $script:LocalPort = if (Test-Path "$INSTALL_DIR\local_port") { Get-Content "$INSTALL_DIR\local_port" } else { "4096" }
+    
+    if (Test-Path "$INSTALL_DIR\subdomain") {
+        $script:Subdomain = Get-Content "$INSTALL_DIR\subdomain"
+        $script:AuthUser = Get-Content "$INSTALL_DIR\auth_user"
+        $script:AuthPassword = Get-Content "$INSTALL_DIR\auth_password"
+    } else {
+        $headers = @{ Authorization = "Bearer $Token" }
+        $response = Invoke-RestMethod -Uri "$RELAY_API_URL/api/devices/$($script:DeviceId)" -Headers $headers
+        
+        $script:Subdomain = $response.subdomain
+        $script:AuthUser = $response.auth_user
+        $script:AuthPassword = $response.auth_password
+        
+        $response.subdomain | Out-File -FilePath "$INSTALL_DIR\subdomain" -Encoding utf8 -NoNewline
+        $response.auth_user | Out-File -FilePath "$INSTALL_DIR\auth_user" -Encoding utf8 -NoNewline
+        $response.auth_password | Out-File -FilePath "$INSTALL_DIR\auth_password" -Encoding utf8 -NoNewline
     }
 }
 
 function Setup-ScheduledTask {
-    param([string]$Subdomain)
+    param([string]$Token)
     
     Write-Host ""
-    Write-ColorOutput "Setting up Windows scheduled tasks..." "Cyan"
+    Write-ColorOutput "Setting up Windows scheduled task..." "Cyan"
     
-    # Remove existing tasks
+    Load-DeviceConfig -Token $Token
+    
     Unregister-ScheduledTask -TaskName "OpenCodeRelay" -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "OpenCodeRelayHeartbeat" -Confirm:$false -ErrorAction SilentlyContinue
     
-    # Create frpc task
-    $frpcAction = New-ScheduledTaskAction -Execute "$INSTALL_DIR\frpc.exe" -Argument "-c `"$CONFIG_FILE`""
-    $frpcTrigger = New-ScheduledTaskTrigger -AtLogon
-    $frpcSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    $arguments = "-relay $RELAY_API_URL -subdomain $Subdomain -auth-user $AuthUser -auth-password $AuthPassword -local-port $LocalPort"
+    $action = New-ScheduledTaskAction -Execute "$INSTALL_DIR\tunnel-client.exe" -Argument $arguments
+    $trigger = New-ScheduledTaskTrigger -AtLogon
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
     
-    Register-ScheduledTask -TaskName "OpenCodeRelay" -Action $frpcAction -Trigger $frpcTrigger -Settings $frpcSettings -Description "OpenCode Relay frpc client" -RunLevel Highest | Out-Null
+    Register-ScheduledTask -TaskName "OpenCodeRelay" -Action $action -Trigger $trigger -Settings $settings -Description "OpenCode Relay tunnel client" -RunLevel Highest | Out-Null
     
-    # Start frpc now
     Start-ScheduledTask -TaskName "OpenCodeRelay"
     
-    # Create heartbeat script
-    $heartbeatScript = @"
-while (`$true) {
-    try {
-        Invoke-WebRequest -Uri "$RELAY_API_URL/api/heartbeat?subdomain=$Subdomain" -UseBasicParsing | Out-Null
-    } catch {}
-    Start-Sleep -Seconds 30
+    Write-ColorOutput "Scheduled task configured!" "Green"
 }
-"@
-    $heartbeatScript | Out-File -FilePath "$INSTALL_DIR\heartbeat.ps1" -Encoding utf8
-    
-    # Create heartbeat task
-    $heartbeatAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$INSTALL_DIR\heartbeat.ps1`""
-    $heartbeatTrigger = New-ScheduledTaskTrigger -AtLogon
-    $heartbeatSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    
-    Register-ScheduledTask -TaskName "OpenCodeRelayHeartbeat" -Action $heartbeatAction -Trigger $heartbeatTrigger -Settings $heartbeatSettings -Description "OpenCode Relay heartbeat" | Out-Null
-    
-    # Start heartbeat now
-    Start-ScheduledTask -TaskName "OpenCodeRelayHeartbeat"
-    
-    Write-ColorOutput "Scheduled tasks configured!" "Green"
+
+function Cleanup-OldInstall {
+    Unregister-ScheduledTask -TaskName "OpenCodeRelayHeartbeat" -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-Item -Path "$INSTALL_DIR\frpc.exe" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$INSTALL_DIR\frpc.toml" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$INSTALL_DIR\heartbeat.ps1" -Force -ErrorAction SilentlyContinue
 }
 
 function Main {
@@ -270,31 +222,33 @@ function Main {
     
     $arch = Detect-Platform
     
-    # Check if frpc already installed
-    if (Test-Path "$INSTALL_DIR\frpc.exe") {
-        Write-ColorOutput "frpc already installed at $INSTALL_DIR\frpc.exe" "Yellow"
+    if (Test-Path "$INSTALL_DIR\tunnel-client.exe") {
+        Write-ColorOutput "tunnel-client already installed at $INSTALL_DIR\tunnel-client.exe" "Yellow"
         $reinstall = Read-Host "Reinstall? (y/n)"
         if ($reinstall -eq "y") {
-            Install-Frpc -Arch $arch
+            Install-TunnelClient -Arch $arch
         }
     } else {
-        Install-Frpc -Arch $arch
+        Install-TunnelClient -Arch $arch
     }
+    
+    Cleanup-OldInstall
     
     $token = Authenticate
     $deviceId = Register-Device -Token $token
     $localPort = Get-OpenCodePort
-    $subdomain = Fetch-FrpcConfig -Token $token -DeviceId $deviceId -LocalPort $localPort
     
-    Setup-ScheduledTask -Subdomain $subdomain
+    Setup-ScheduledTask -Token $token
+    
+    $subdomain = Get-Content "$INSTALL_DIR\subdomain"
     
     Write-Host ""
     Write-ColorOutput "================================================" "Green"
     Write-ColorOutput "   Setup Complete!                              " "Green"
     Write-ColorOutput "================================================" "Green"
     Write-Host ""
-    Write-Host "Your OpenCode instance is now accessible at:"
-    Write-ColorOutput "  http://$subdomain.liuyao16.dpdns.org" "Yellow"
+    Write-Host "Your OpenCode instance is now accessible via the relay."
+    Write-ColorOutput "  Subdomain: $subdomain" "Yellow"
     Write-Host ""
     Write-Host "Management commands (PowerShell as Admin):"
     Write-Host "  Start:   Start-ScheduledTask -TaskName 'OpenCodeRelay'"
@@ -304,5 +258,4 @@ function Main {
     Write-Host "You can now connect to this device using the OpenCode Anywhere app!"
 }
 
-# Run main
 Main

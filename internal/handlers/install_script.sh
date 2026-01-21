@@ -1,33 +1,17 @@
 #!/bin/bash
-#
-# OpenCode Relay Client Setup Script
-# This script sets up frpc on your computer to enable remote access via OpenCode Anywhere app
-#
-# Usage:
-#   curl -sSL https://raw.githubusercontent.com/zero469/opencode-relay-server/main/scripts/setup-opencode-relay.sh | bash
-#
-# Or download and run:
-#   chmod +x setup-opencode-relay.sh
-#   ./setup-opencode-relay.sh
-#
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Configuration
 RELAY_API_URL="${RELAY_API_URL:-https://opencode-relay-server.fly.dev}"
-FRPC_VERSION="0.61.1"
 INSTALL_DIR="$HOME/.opencode-relay"
-CONFIG_FILE="$INSTALL_DIR/frpc.toml"
-LOG_FILE="$INSTALL_DIR/frpc.log"
+LOG_FILE="$INSTALL_DIR/tunnel.log"
 
-# Detect OS and architecture
 detect_platform() {
     OS=$(uname -s | tr '[:upper:]' '[:lower:]')
     ARCH=$(uname -m)
@@ -64,42 +48,34 @@ detect_platform() {
     echo -e "${BLUE}Detected platform: ${OS}_${ARCH}${NC}"
 }
 
-# Download and install frpc
-install_frpc() {
-    echo -e "${BLUE}Installing frpc v${FRPC_VERSION}...${NC}"
+install_tunnel_client() {
+    echo -e "${BLUE}Installing tunnel-client...${NC}"
     
     mkdir -p "$INSTALL_DIR"
     
-    DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_${OS}_${ARCH}.tar.gz"
-    TEMP_DIR=$(mktemp -d)
+    DOWNLOAD_URL="https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client_${OS}_${ARCH}"
     
     echo "Downloading from: $DOWNLOAD_URL"
     
     if command -v curl &> /dev/null; then
-        curl -sSL "$DOWNLOAD_URL" -o "$TEMP_DIR/frp.tar.gz"
+        curl -sSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/tunnel-client"
     elif command -v wget &> /dev/null; then
-        wget -q "$DOWNLOAD_URL" -O "$TEMP_DIR/frp.tar.gz"
+        wget -q "$DOWNLOAD_URL" -O "$INSTALL_DIR/tunnel-client"
     else
         echo -e "${RED}Error: Neither curl nor wget found. Please install one of them.${NC}"
         exit 1
     fi
     
-    tar -xzf "$TEMP_DIR/frp.tar.gz" -C "$TEMP_DIR"
-    cp "$TEMP_DIR/frp_${FRPC_VERSION}_${OS}_${ARCH}/frpc" "$INSTALL_DIR/frpc"
-    chmod +x "$INSTALL_DIR/frpc"
+    chmod +x "$INSTALL_DIR/tunnel-client"
     
-    rm -rf "$TEMP_DIR"
-    
-    echo -e "${GREEN}frpc installed to $INSTALL_DIR/frpc${NC}"
+    echo -e "${GREEN}tunnel-client installed to $INSTALL_DIR/tunnel-client${NC}"
 }
 
-# User authentication
 authenticate() {
     echo ""
     echo -e "${BLUE}=== OpenCode Relay Authentication ===${NC}"
     echo ""
     
-    # Check if already logged in
     if [ -f "$INSTALL_DIR/token" ]; then
         echo "Found existing authentication. Do you want to use it? (y/n)"
         read -r use_existing
@@ -109,10 +85,9 @@ authenticate() {
         fi
     fi
     
-    # Login (registration requires email verification, use the iOS app to register first)
     echo ""
     echo -e "${YELLOW}Logging in...${NC}"
-    echo -e "${CYAN}(Don't have an account? Register via the OpenCode Anywhere iOS app first)${NC}"
+    echo -e "(Don't have an account? Register via the OpenCode Anywhere iOS app first)"
     echo ""
     
     echo -n "Email: "
@@ -144,12 +119,10 @@ authenticate() {
     echo -e "${GREEN}Login successful!${NC}"
 }
 
-# Register device
 register_device() {
     echo ""
     echo -e "${BLUE}=== Device Registration ===${NC}"
     
-    # Check for existing device config
     if [ -f "$INSTALL_DIR/device_id" ]; then
         DEVICE_ID=$(cat "$INSTALL_DIR/device_id")
         echo "Found existing device registration (ID: $DEVICE_ID)"
@@ -160,13 +133,11 @@ register_device() {
         fi
     fi
     
-    # Get device name
     DEFAULT_NAME=$(hostname)
     echo -n "Device name [$DEFAULT_NAME]: "
     read -r DEVICE_NAME
     DEVICE_NAME="${DEVICE_NAME:-$DEFAULT_NAME}"
     
-    # Register device
     RESPONSE=$(curl -sSL -X POST "$RELAY_API_URL/api/devices" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
@@ -180,6 +151,8 @@ register_device() {
     
     DEVICE_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
     SUBDOMAIN=$(echo "$RESPONSE" | grep -o '"subdomain":"[^"]*"' | cut -d'"' -f4)
+    AUTH_USER=$(echo "$RESPONSE" | grep -o '"auth_user":"[^"]*"' | cut -d'"' -f4)
+    AUTH_PASSWORD=$(echo "$RESPONSE" | grep -o '"auth_password":"[^"]*"' | cut -d'"' -f4)
     
     if [ -z "$DEVICE_ID" ] || [ -z "$SUBDOMAIN" ]; then
         echo -e "${RED}Failed to parse device response${NC}"
@@ -187,13 +160,16 @@ register_device() {
     fi
     
     echo "$DEVICE_ID" > "$INSTALL_DIR/device_id"
+    echo "$SUBDOMAIN" > "$INSTALL_DIR/subdomain"
+    echo "$AUTH_USER" > "$INSTALL_DIR/auth_user"
+    echo "$AUTH_PASSWORD" > "$INSTALL_DIR/auth_password"
+    chmod 600 "$INSTALL_DIR/auth_user" "$INSTALL_DIR/auth_password"
     
     echo -e "${GREEN}Device registered successfully!${NC}"
     echo -e "  Device ID: $DEVICE_ID"
-    echo -e "  Subdomain: ${YELLOW}${SUBDOMAIN}.liuyao16.dpdns.org${NC}"
+    echo -e "  Subdomain: ${YELLOW}${SUBDOMAIN}${NC}"
 }
 
-# Get OpenCode local port
 get_opencode_port() {
     echo ""
     echo -e "${BLUE}=== OpenCode Configuration ===${NC}"
@@ -206,60 +182,41 @@ get_opencode_port() {
     echo "$OPENCODE_PORT" > "$INSTALL_DIR/local_port"
 }
 
-# Fetch and save frpc config
-fetch_frpc_config() {
-    echo ""
-    echo -e "${BLUE}Fetching frpc configuration...${NC}"
-    
-    DEVICE_ID=$(cat "$INSTALL_DIR/device_id")
-    LOCAL_PORT=$(cat "$INSTALL_DIR/local_port")
-    
-    RESPONSE=$(curl -sSL -X GET "$RELAY_API_URL/api/devices/$DEVICE_ID/frpc-config?local_port=$LOCAL_PORT" \
-        -H "Authorization: Bearer $TOKEN" \
-        2>&1)
-    
-    if echo "$RESPONSE" | grep -q "error"; then
-        echo -e "${RED}Failed to fetch frpc config: $RESPONSE${NC}"
+load_device_config() {
+    if [ ! -f "$INSTALL_DIR/device_id" ]; then
+        echo -e "${RED}Device not registered. Please run setup first.${NC}"
         exit 1
     fi
     
-    # Parse JSON and generate TOML config
-    SERVER_ADDR=$(echo "$RESPONSE" | grep -o '"server_addr":"[^"]*"' | cut -d'"' -f4)
-    SERVER_PORT=$(echo "$RESPONSE" | grep -o '"server_port":"[^"]*"' | cut -d'"' -f4)
-    AUTH_TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-    SUBDOMAIN=$(echo "$RESPONSE" | grep -o '"subdomain":"[^"]*"' | cut -d'"' -f4)
-    AUTH_USER=$(echo "$RESPONSE" | grep -o '"auth_user":"[^"]*"' | cut -d'"' -f4)
-    AUTH_PASSWORD=$(echo "$RESPONSE" | grep -o '"auth_password":"[^"]*"' | cut -d'"' -f4)
+    DEVICE_ID=$(cat "$INSTALL_DIR/device_id")
+    LOCAL_PORT=$(cat "$INSTALL_DIR/local_port" 2>/dev/null || echo "4096")
     
-    cat > "$CONFIG_FILE" << EOF
-# OpenCode Relay frpc configuration
-# Generated by setup script
-
-serverAddr = "$SERVER_ADDR"
-serverPort = $SERVER_PORT
-
-auth.method = "token"
-auth.token = "$AUTH_TOKEN"
-
-[[proxies]]
-name = "opencode-$SUBDOMAIN"
-type = "http"
-localIP = "127.0.0.1"
-localPort = $LOCAL_PORT
-subdomain = "$SUBDOMAIN"
-httpUser = "$AUTH_USER"
-httpPassword = "$AUTH_PASSWORD"
-EOF
-    
-    chmod 600 "$CONFIG_FILE"
-    
-    echo -e "${GREEN}frpc configuration saved to $CONFIG_FILE${NC}"
+    if [ -f "$INSTALL_DIR/subdomain" ]; then
+        SUBDOMAIN=$(cat "$INSTALL_DIR/subdomain")
+        AUTH_USER=$(cat "$INSTALL_DIR/auth_user")
+        AUTH_PASSWORD=$(cat "$INSTALL_DIR/auth_password")
+    else
+        TOKEN=$(cat "$INSTALL_DIR/token")
+        RESPONSE=$(curl -sSL -X GET "$RELAY_API_URL/api/devices/$DEVICE_ID" \
+            -H "Authorization: Bearer $TOKEN" \
+            2>&1)
+        
+        SUBDOMAIN=$(echo "$RESPONSE" | grep -o '"subdomain":"[^"]*"' | cut -d'"' -f4)
+        AUTH_USER=$(echo "$RESPONSE" | grep -o '"auth_user":"[^"]*"' | cut -d'"' -f4)
+        AUTH_PASSWORD=$(echo "$RESPONSE" | grep -o '"auth_password":"[^"]*"' | cut -d'"' -f4)
+        
+        echo "$SUBDOMAIN" > "$INSTALL_DIR/subdomain"
+        echo "$AUTH_USER" > "$INSTALL_DIR/auth_user"
+        echo "$AUTH_PASSWORD" > "$INSTALL_DIR/auth_password"
+        chmod 600 "$INSTALL_DIR/auth_user" "$INSTALL_DIR/auth_password"
+    fi
 }
 
-# Setup auto-start (macOS launchd)
 setup_launchd() {
     echo ""
     echo -e "${BLUE}Setting up auto-start (launchd)...${NC}"
+    
+    load_device_config
     
     PLIST_FILE="$HOME/Library/LaunchAgents/com.opencode.relay.plist"
     
@@ -274,9 +231,17 @@ setup_launchd() {
     <string>com.opencode.relay</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_DIR/frpc</string>
-        <string>-c</string>
-        <string>$CONFIG_FILE</string>
+        <string>$INSTALL_DIR/tunnel-client</string>
+        <string>-relay</string>
+        <string>$RELAY_API_URL</string>
+        <string>-subdomain</string>
+        <string>$SUBDOMAIN</string>
+        <string>-auth-user</string>
+        <string>$AUTH_USER</string>
+        <string>-auth-password</string>
+        <string>$AUTH_PASSWORD</string>
+        <string>-local-port</string>
+        <string>$LOCAL_PORT</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -290,17 +255,17 @@ setup_launchd() {
 </plist>
 EOF
     
-    # Load the service
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
     launchctl load "$PLIST_FILE"
     
     echo -e "${GREEN}Auto-start configured!${NC}"
 }
 
-# Setup auto-start (Linux systemd)
 setup_systemd() {
     echo ""
     echo -e "${BLUE}Setting up auto-start (systemd user service)...${NC}"
+    
+    load_device_config
     
     SYSTEMD_DIR="$HOME/.config/systemd/user"
     SERVICE_FILE="$SYSTEMD_DIR/opencode-relay.service"
@@ -309,12 +274,12 @@ setup_systemd() {
     
     cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=OpenCode Relay Client
+Description=OpenCode Relay Tunnel Client
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_DIR/frpc -c $CONFIG_FILE
+ExecStart=$INSTALL_DIR/tunnel-client -relay $RELAY_API_URL -subdomain $SUBDOMAIN -auth-user $AUTH_USER -auth-password $AUTH_PASSWORD -local-port $LOCAL_PORT
 Restart=always
 RestartSec=10
 
@@ -329,80 +294,20 @@ EOF
     echo -e "${GREEN}Auto-start configured!${NC}"
 }
 
-# Setup heartbeat cron job
-setup_heartbeat() {
-    echo ""
-    echo -e "${BLUE}Setting up heartbeat...${NC}"
-    
-    SUBDOMAIN=$(grep 'subdomain = ' "$CONFIG_FILE" | cut -d'"' -f2)
-    
-    # Create heartbeat script
-    cat > "$INSTALL_DIR/heartbeat.sh" << EOF
-#!/bin/bash
-curl -sSL "$RELAY_API_URL/api/heartbeat?subdomain=$SUBDOMAIN" > /dev/null 2>&1
-EOF
-    chmod +x "$INSTALL_DIR/heartbeat.sh"
-    
+cleanup_old_install() {
     if [ "$OS" = "darwin" ]; then
-        # macOS - use launchd for heartbeat
-        HEARTBEAT_PLIST="$HOME/Library/LaunchAgents/com.opencode.relay.heartbeat.plist"
-        
-        cat > "$HEARTBEAT_PLIST" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.opencode.relay.heartbeat</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$INSTALL_DIR/heartbeat.sh</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>StartInterval</key>
-    <integer>30</integer>
-</dict>
-</plist>
-EOF
-        
-        launchctl unload "$HEARTBEAT_PLIST" 2>/dev/null || true
-        launchctl load "$HEARTBEAT_PLIST"
+        launchctl unload "$HOME/Library/LaunchAgents/com.opencode.relay.heartbeat.plist" 2>/dev/null || true
+        rm -f "$HOME/Library/LaunchAgents/com.opencode.relay.heartbeat.plist"
     else
-        # Linux - use cron or systemd timer
-        TIMER_FILE="$HOME/.config/systemd/user/opencode-relay-heartbeat.timer"
-        SERVICE_FILE="$HOME/.config/systemd/user/opencode-relay-heartbeat.service"
-        
-        cat > "$SERVICE_FILE" << EOF
-[Unit]
-Description=OpenCode Relay Heartbeat
-
-[Service]
-Type=oneshot
-ExecStart=$INSTALL_DIR/heartbeat.sh
-EOF
-        
-        cat > "$TIMER_FILE" << EOF
-[Unit]
-Description=OpenCode Relay Heartbeat Timer
-
-[Timer]
-OnBootSec=30
-OnUnitActiveSec=30
-
-[Install]
-WantedBy=timers.target
-EOF
-        
-        systemctl --user daemon-reload
-        systemctl --user enable opencode-relay-heartbeat.timer
-        systemctl --user start opencode-relay-heartbeat.timer
+        systemctl --user stop opencode-relay-heartbeat.timer 2>/dev/null || true
+        systemctl --user disable opencode-relay-heartbeat.timer 2>/dev/null || true
+        rm -f "$HOME/.config/systemd/user/opencode-relay-heartbeat.timer"
+        rm -f "$HOME/.config/systemd/user/opencode-relay-heartbeat.service"
     fi
     
-    echo -e "${GREEN}Heartbeat configured (every 30 seconds)${NC}"
+    rm -f "$INSTALL_DIR/frpc" "$INSTALL_DIR/frpc.toml" "$INSTALL_DIR/heartbeat.sh"
 }
 
-# Main installation flow
 main() {
     echo ""
     echo -e "${GREEN}================================================${NC}"
@@ -412,40 +317,38 @@ main() {
     
     detect_platform
     
-    # Check if frpc already installed
-    if [ -f "$INSTALL_DIR/frpc" ]; then
-        echo -e "${YELLOW}frpc already installed at $INSTALL_DIR/frpc${NC}"
+    if [ -f "$INSTALL_DIR/tunnel-client" ]; then
+        echo -e "${YELLOW}tunnel-client already installed at $INSTALL_DIR/tunnel-client${NC}"
         echo "Do you want to reinstall? (y/n)"
         read -r reinstall
         if [ "$reinstall" = "y" ]; then
-            install_frpc
+            install_tunnel_client
         fi
     else
-        install_frpc
+        install_tunnel_client
     fi
+    
+    cleanup_old_install
     
     authenticate
     register_device
     get_opencode_port
-    fetch_frpc_config
     
-    # Setup auto-start based on OS
     if [ "$OS" = "darwin" ]; then
         setup_launchd
     else
         setup_systemd
     fi
     
-    setup_heartbeat
-    
     echo ""
     echo -e "${GREEN}================================================${NC}"
     echo -e "${GREEN}   Setup Complete!                              ${NC}"
     echo -e "${GREEN}================================================${NC}"
     echo ""
-    echo "Your OpenCode instance is now accessible at:"
-    SUBDOMAIN=$(grep 'subdomain = ' "$CONFIG_FILE" | cut -d'"' -f2)
-    echo -e "  ${YELLOW}http://${SUBDOMAIN}.liuyao16.dpdns.org${NC}"
+    
+    SUBDOMAIN=$(cat "$INSTALL_DIR/subdomain")
+    echo "Your OpenCode instance is now accessible via the relay."
+    echo -e "  Subdomain: ${YELLOW}${SUBDOMAIN}${NC}"
     echo ""
     echo "Management commands:"
     if [ "$OS" = "darwin" ]; then
@@ -462,5 +365,4 @@ main() {
     echo "You can now connect to this device using the OpenCode Anywhere app!"
 }
 
-# Run main
 main
