@@ -55,9 +55,9 @@ install_tunnel_client() {
     
     FILENAME="tunnel-client-${OS}-${ARCH}"
     URLS=(
+        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
         "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
         "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
-        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
     )
     
     DOWNLOADED=false

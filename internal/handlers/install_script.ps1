@@ -34,9 +34,9 @@ function Install-TunnelClient {
     
     $fileName = "tunnel-client-windows-$Arch.exe"
     $urls = @(
+        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
         "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
+        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
     )
     
     $downloaded = $false

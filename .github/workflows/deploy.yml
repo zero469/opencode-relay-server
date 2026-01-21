@@ -10,8 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-action/setup-flyctl@master
+      - name: Install flyctl
+        run: curl -L https://fly.io/install.sh | sh
 
-      - run: flyctl deploy --remote-only
+      - name: Deploy to Fly.dev
+        run: ~/.fly/bin/flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
