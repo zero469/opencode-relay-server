@@ -97,7 +97,7 @@ authenticate() {
     
     if [ -f "$INSTALL_DIR/token" ]; then
         echo "Found existing authentication. Do you want to use it? (y/n)"
-        read -r use_existing
+        read -r use_existing < /dev/tty
         if [ "$use_existing" = "y" ]; then
             TOKEN=$(cat "$INSTALL_DIR/token")
             return
@@ -110,9 +110,9 @@ authenticate() {
     echo ""
     
     echo -n "Email: "
-    read -r EMAIL
+    read -r EMAIL < /dev/tty
     echo -n "Password: "
-    read -rs PASSWORD
+    read -rs PASSWORD < /dev/tty
     echo ""
     
     RESPONSE=$(curl -sSL -X POST "$RELAY_API_URL/api/login" \
@@ -146,7 +146,7 @@ register_device() {
         DEVICE_ID=$(cat "$INSTALL_DIR/device_id")
         echo "Found existing device registration (ID: $DEVICE_ID)"
         echo "Do you want to use it? (y/n)"
-        read -r use_existing
+        read -r use_existing < /dev/tty
         if [ "$use_existing" = "y" ]; then
             return
         fi
@@ -154,7 +154,7 @@ register_device() {
     
     DEFAULT_NAME=$(hostname)
     echo -n "Device name [$DEFAULT_NAME]: "
-    read -r DEVICE_NAME
+    read -r DEVICE_NAME < /dev/tty
     DEVICE_NAME="${DEVICE_NAME:-$DEFAULT_NAME}"
     
     RESPONSE=$(curl -sSL -X POST "$RELAY_API_URL/api/devices" \
@@ -195,7 +195,7 @@ get_opencode_port() {
     
     DEFAULT_PORT="4096"
     echo -n "OpenCode API port [$DEFAULT_PORT]: "
-    read -r OPENCODE_PORT
+    read -r OPENCODE_PORT < /dev/tty
     OPENCODE_PORT="${OPENCODE_PORT:-$DEFAULT_PORT}"
     
     echo "$OPENCODE_PORT" > "$INSTALL_DIR/local_port"
@@ -339,7 +339,7 @@ main() {
     if [ -f "$INSTALL_DIR/tunnel-client" ]; then
         echo -e "${YELLOW}tunnel-client already installed at $INSTALL_DIR/tunnel-client${NC}"
         echo "Do you want to reinstall? (y/n)"
-        read -r reinstall
+        read -r reinstall < /dev/tty
         if [ "$reinstall" = "y" ]; then
             install_tunnel_client
         fi
