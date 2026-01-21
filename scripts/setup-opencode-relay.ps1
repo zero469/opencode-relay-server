@@ -12,7 +12,7 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$RELAY_API_URL = if ($env:RELAY_API_URL) { $env:RELAY_API_URL } else { "https://opencode-relay-server.fly.dev" }
+$RELAY_API_URL = if ($env:RELAY_API_URL) { $env:RELAY_API_URL } else { "https://opencode-relay.azurewebsites.net" }
 $FRPC_VERSION = "0.61.1"
 $INSTALL_DIR = "$env:USERPROFILE\.opencode-relay"
 $CONFIG_FILE = "$INSTALL_DIR\frpc.toml"

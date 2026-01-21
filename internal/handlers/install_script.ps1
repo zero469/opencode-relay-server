@@ -3,12 +3,12 @@
 # This script sets up tunnel-client on your Windows PC to enable remote access via OpenCode Anywhere app
 #
 # Usage:
-#   irm https://opencode-relay-server.fly.dev/install.ps1 | iex
+#   irm https://opencode-relay.azurewebsites.net/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
 
-$RELAY_API_URL = if ($env:RELAY_API_URL) { $env:RELAY_API_URL } else { "https://opencode-relay-server.fly.dev" }
+$RELAY_API_URL = if ($env:RELAY_API_URL) { $env:RELAY_API_URL } else { "https://opencode-relay.azurewebsites.net" }
 $INSTALL_DIR = "$env:USERPROFILE\.opencode-relay"
 $LOG_FILE = "$INSTALL_DIR\tunnel.log"
 

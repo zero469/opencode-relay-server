@@ -45,7 +45,7 @@ type Client struct {
 }
 
 func main() {
-	relayURL := flag.String("relay", "", "Relay server URL (e.g., wss://opencode-relay-server.fly.dev)")
+	relayURL := flag.String("relay", "", "Relay server URL (e.g., wss://opencode-relay.azurewebsites.net)")
 	subdomain := flag.String("subdomain", "", "Device subdomain")
 	authUser := flag.String("auth-user", "", "Auth username")
 	authPassword := flag.String("auth-password", "", "Auth password")

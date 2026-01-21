@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-RELAY_API_URL="${RELAY_API_URL:-https://opencode-relay-server.fly.dev}"
+RELAY_API_URL="${RELAY_API_URL:-https://opencode-relay.azurewebsites.net}"
 INSTALL_DIR="$HOME/.opencode-relay"
 LOG_FILE="$INSTALL_DIR/tunnel.log"
 
