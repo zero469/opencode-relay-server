@@ -1,0 +1,17 @@
+# Binaries
+dist/
+tunnel-client
+tunnel-client.exe
+opencode-relay-server
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
