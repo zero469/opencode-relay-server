@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/zero469/opencode-relay-server/internal/config"
@@ -67,6 +70,34 @@ func main() {
 
 	mux.HandleFunc("GET /install.sh", handlers.ServeInstallScript)
 	mux.HandleFunc("GET /install.ps1", handlers.ServeInstallScriptPS1)
+
+	// Temporary endpoint for database migration - REMOVE AFTER USE
+	mux.HandleFunc("POST /api/admin/restore-db", func(w http.ResponseWriter, r *http.Request) {
+		secret := r.Header.Get("X-Admin-Secret")
+		if secret != os.Getenv("ADMIN_SECRET") || secret == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		dbData, err := base64.StdEncoding.DecodeString(string(body))
+		if err != nil {
+			http.Error(w, "failed to decode base64", http.StatusBadRequest)
+			return
+		}
+
+		if err := os.WriteFile(cfg.DatabasePath, dbData, 0644); err != nil {
+			http.Error(w, "failed to write database: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write([]byte(`{"status":"ok","message":"database restored, restart required"}`))
+	})
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
