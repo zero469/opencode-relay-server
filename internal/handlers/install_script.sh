@@ -53,16 +53,35 @@ install_tunnel_client() {
     
     mkdir -p "$INSTALL_DIR"
     
-    DOWNLOAD_URL="https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client_${OS}_${ARCH}"
+    FILENAME="tunnel-client-${OS}-${ARCH}"
+    URLS=(
+        "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
+        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
+        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
+    )
     
-    echo "Downloading from: $DOWNLOAD_URL"
+    DOWNLOADED=false
+    for url in "${URLS[@]}"; do
+        echo "Trying: $url"
+        if command -v curl &> /dev/null; then
+            if curl -sSL --connect-timeout 10 "$url" -o "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
+                DOWNLOADED=true
+                echo -e "${GREEN}Download successful!${NC}"
+                break
+            fi
+        elif command -v wget &> /dev/null; then
+            if wget -q --timeout=10 "$url" -O "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
+                DOWNLOADED=true
+                echo -e "${GREEN}Download successful!${NC}"
+                break
+            fi
+        fi
+        echo -e "${YELLOW}Failed, trying next mirror...${NC}"
+    done
     
-    if command -v curl &> /dev/null; then
-        curl -sSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/tunnel-client"
-    elif command -v wget &> /dev/null; then
-        wget -q "$DOWNLOAD_URL" -O "$INSTALL_DIR/tunnel-client"
-    else
-        echo -e "${RED}Error: Neither curl nor wget found. Please install one of them.${NC}"
+    if [ "$DOWNLOADED" = false ]; then
+        echo -e "${RED}All download sources failed. Please download manually from:${NC}"
+        echo "https://github.com/zero469/opencode-relay-server/releases/latest"
         exit 1
     fi
     
