@@ -35,15 +35,16 @@ function Install-TunnelClient {
     $fileName = "tunnel-client-windows-$Arch.exe"
     $urls = @(
         "https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
+        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
         "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
+        "https://gh-proxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
     )
     
     $downloaded = $false
     foreach ($url in $urls) {
         Write-Host "Trying: $url"
         try {
-            Invoke-WebRequest -Uri $url -OutFile "$INSTALL_DIR\tunnel-client.exe" -UseBasicParsing -TimeoutSec 60
+            Invoke-WebRequest -Uri $url -OutFile "$INSTALL_DIR\tunnel-client.exe" -UseBasicParsing -TimeoutSec 120
             $downloaded = $true
             Write-ColorOutput "Download successful!" "Green"
             break
@@ -55,6 +56,8 @@ function Install-TunnelClient {
     if (-not $downloaded) {
         Write-ColorOutput "All download sources failed. Please download manually from:" "Red"
         Write-Host "https://github.com/zero469/opencode-relay-server/releases/latest"
+        Write-Host ""
+        Read-Host "Press Enter to exit..."
         exit 1
     }
     

@@ -56,21 +56,22 @@ install_tunnel_client() {
     FILENAME="tunnel-client-${OS}-${ARCH}"
     URLS=(
         "https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
-        "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
         "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
+        "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
+        "https://gh-proxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$FILENAME"
     )
     
     DOWNLOADED=false
     for url in "${URLS[@]}"; do
         echo "Trying: $url"
         if command -v curl &> /dev/null; then
-            if curl -sSL --connect-timeout 10 "$url" -o "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
+            if curl -fSL --connect-timeout 15 --max-time 120 "$url" -o "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
                 DOWNLOADED=true
                 echo -e "${GREEN}Download successful!${NC}"
                 break
             fi
         elif command -v wget &> /dev/null; then
-            if wget -q --timeout=10 "$url" -O "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
+            if wget -q --timeout=120 "$url" -O "$INSTALL_DIR/tunnel-client" 2>/dev/null; then
                 DOWNLOADED=true
                 echo -e "${GREEN}Download successful!${NC}"
                 break
@@ -82,6 +83,9 @@ install_tunnel_client() {
     if [ "$DOWNLOADED" = false ]; then
         echo -e "${RED}All download sources failed. Please download manually from:${NC}"
         echo "https://github.com/zero469/opencode-relay-server/releases/latest"
+        echo ""
+        echo -e "${YELLOW}Press Enter to exit...${NC}"
+        read -r < /dev/tty
         exit 1
     fi
     
