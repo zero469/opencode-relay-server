@@ -24,7 +24,7 @@ const (
 	configDir       = ".opencode-tunnel"
 	authFileName    = "auth.json"
 	deviceFileName  = "device.json"
-	defaultRelay    = "https://opencode-relay.fly.dev"
+	defaultRelay    = "https://opencode-relay.azurewebsites.net"
 	defaultPort     = "4096"
 	pairingInterval = 2 * time.Second
 )
@@ -131,7 +131,7 @@ Commands:
 
 Options for 'start':
   -port <port>   Local OpenCode port (default: 4096)
-  -relay <url>   Relay server URL (default: https://opencode-relay.fly.dev)`)
+  -relay <url>   Relay server URL (default: https://opencode-relay.azurewebsites.net)`)
 }
 
 func cmdLogin() {
