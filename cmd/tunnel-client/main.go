@@ -549,6 +549,11 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 
 	headers["Content-Length"] = fmt.Sprintf("%d", len(responseBody))
 
+	// If encrypted, override Content-Type to text/plain so clients don't try to parse as JSON
+	if c.config.EncryptionKey != "" {
+		headers["Content-Type"] = "text/plain"
+	}
+
 	tunnelResp := &TunnelResponse{
 		ID:         req.ID,
 		StatusCode: resp.StatusCode,
