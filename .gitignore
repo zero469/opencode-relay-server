@@ -1,6 +1,6 @@
 # Binaries
 dist/
-tunnel-client
+/tunnel-client
 tunnel-client.exe
 opencode-relay-server
 

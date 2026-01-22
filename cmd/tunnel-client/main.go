@@ -2,6 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,12 +41,13 @@ type AuthConfig struct {
 }
 
 type DeviceConfig struct {
-	DeviceID     int64  `json:"device_id"`
-	DeviceName   string `json:"device_name"`
-	RelayURL     string `json:"relay_url"`
-	Subdomain    string `json:"subdomain"`
-	AuthUser     string `json:"auth_user"`
-	AuthPassword string `json:"auth_password"`
+	DeviceID      int64  `json:"device_id"`
+	DeviceName    string `json:"device_name"`
+	RelayURL      string `json:"relay_url"`
+	Subdomain     string `json:"subdomain"`
+	AuthUser      string `json:"auth_user"`
+	AuthPassword  string `json:"auth_password"`
+	EncryptionKey string `json:"encryption_key,omitempty"`
 }
 
 type LoginResponse struct {
@@ -64,10 +70,12 @@ type PairingStatusResponse struct {
 }
 
 type QRData struct {
-	Version     int    `json:"v"`
-	RelayURL    string `json:"r"`
-	PairingID   string `json:"p"`
-	PairingCode string `json:"c"`
+	Version       int    `json:"v"`
+	RelayURL      string `json:"r"`
+	PairingID     string `json:"p"`
+	PairingCode   string `json:"c"`
+	Hostname      string `json:"h,omitempty"`
+	EncryptionKey string `json:"k,omitempty"`
 }
 
 type TunnelRequest struct {
@@ -305,11 +313,16 @@ func startPairing(relayURL, token, localPort string) (*DeviceConfig, error) {
 		return nil, err
 	}
 
+	hostname, _ := os.Hostname()
+	encryptionKey := generateEncryptionKey()
+
 	qrData := QRData{
-		Version:     1,
-		RelayURL:    relayURL,
-		PairingID:   pairing.ID,
-		PairingCode: pairing.PairingCode,
+		Version:       1,
+		RelayURL:      relayURL,
+		PairingID:     pairing.ID,
+		PairingCode:   pairing.PairingCode,
+		Hostname:      hostname,
+		EncryptionKey: encryptionKey,
 	}
 	qrJSON, _ := json.Marshal(qrData)
 
@@ -327,7 +340,12 @@ func startPairing(relayURL, token, localPort string) (*DeviceConfig, error) {
 	fmt.Printf("  Expires at: %s\n\n", pairing.ExpiresAt.Local().Format("15:04:05"))
 	fmt.Println("  Waiting for app to scan...")
 
-	return pollPairingStatus(relayURL, token, pairing.ID, pairing.ExpiresAt)
+	device, err := pollPairingStatus(relayURL, token, pairing.ID, pairing.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	device.EncryptionKey = encryptionKey
+	return device, nil
 }
 
 func pollPairingStatus(relayURL, token, pairingID string, expiresAt time.Time) (*DeviceConfig, error) {
@@ -473,13 +491,25 @@ func (c *TunnelClient) buildWebSocketURL() string {
 	q.Set("auth_password", c.config.AuthPassword)
 	u.RawQuery = q.Encode()
 
+	log.Printf("[debug] WebSocket URL: %s (subdomain: %s)", u.String(), c.config.Subdomain)
 	return u.String()
 }
 
 func (c *TunnelClient) handleRequest(req *TunnelRequest) {
+	log.Printf("[debug] Received request: %s %s", req.Method, req.Path)
 	localURL := fmt.Sprintf("http://localhost:%s%s", c.localPort, req.Path)
 
-	httpReq, err := http.NewRequest(req.Method, localURL, bytes.NewReader(req.Body))
+	requestBody := req.Body
+	if c.config.EncryptionKey != "" && len(req.Body) > 0 {
+		decrypted, err := decrypt(req.Body, c.config.EncryptionKey)
+		if err != nil {
+			c.sendErrorResponse(req.ID, 400, "failed to decrypt request")
+			return
+		}
+		requestBody = decrypted
+	}
+
+	httpReq, err := http.NewRequest(req.Method, localURL, bytes.NewReader(requestBody))
 	if err != nil {
 		c.sendErrorResponse(req.ID, 500, "failed to create request")
 		return
@@ -502,30 +532,58 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 		return
 	}
 
+	responseBody := body
+	if c.config.EncryptionKey != "" && len(body) > 0 {
+		encrypted, err := encrypt(body, c.config.EncryptionKey)
+		if err != nil {
+			c.sendErrorResponse(req.ID, 500, "failed to encrypt response")
+			return
+		}
+		responseBody = encrypted
+	}
+
 	headers := make(map[string]string)
 	for key := range resp.Header {
 		headers[key] = resp.Header.Get(key)
 	}
 
+	headers["Content-Length"] = fmt.Sprintf("%d", len(responseBody))
+
 	tunnelResp := &TunnelResponse{
 		ID:         req.ID,
 		StatusCode: resp.StatusCode,
 		Headers:    headers,
-		Body:       body,
+		Body:       responseBody,
 	}
 
 	data, _ := json.Marshal(tunnelResp)
 	c.writeMu.Lock()
-	c.conn.WriteMessage(websocket.TextMessage, data)
+	err = c.conn.WriteMessage(websocket.TextMessage, data)
 	c.writeMu.Unlock()
+	if err != nil {
+		log.Printf("[debug] Failed to send response: %v", err)
+	} else {
+		log.Printf("[debug] Sent response: status=%d, bodyLen=%d", resp.StatusCode, len(responseBody))
+	}
 }
 
 func (c *TunnelClient) sendErrorResponse(reqID string, statusCode int, message string) {
+	body := []byte(message)
+	if c.config.EncryptionKey != "" {
+		encrypted, err := encrypt(body, c.config.EncryptionKey)
+		if err == nil {
+			body = encrypted
+		}
+	}
+
 	resp := &TunnelResponse{
 		ID:         reqID,
 		StatusCode: statusCode,
-		Headers:    map[string]string{"Content-Type": "text/plain"},
-		Body:       []byte(message),
+		Headers: map[string]string{
+			"Content-Type":   "text/plain",
+			"Content-Length": fmt.Sprintf("%d", len(body)),
+		},
+		Body: body,
 	}
 
 	data, _ := json.Marshal(resp)
@@ -581,4 +639,65 @@ func saveDeviceConfig(config *DeviceConfig) error {
 	}
 	data, _ := json.MarshalIndent(config, "", "  ")
 	return os.WriteFile(filepath.Join(dir, deviceFileName), data, 0600)
+}
+
+func generateEncryptionKey() string {
+	key := make([]byte, 32)
+	rand.Read(key)
+	return hex.EncodeToString(key)
+}
+
+func encrypt(plaintext []byte, keyHex string) ([]byte, error) {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return []byte(base64.StdEncoding.EncodeToString(ciphertext)), nil
+}
+
+func decrypt(ciphertext []byte, keyHex string) ([]byte, error) {
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := base64.StdEncoding.DecodeString(string(ciphertext))
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertextBytes := data[:nonceSize], data[nonceSize:]
+	return gcm.Open(nil, nonce, ciphertextBytes, nil)
 }
