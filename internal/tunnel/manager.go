@@ -146,11 +146,13 @@ func (tc *TunnelConnection) SendRequest(req *TunnelRequest) (*TunnelResponse, er
 
 	tc.pendingMu.Lock()
 	tc.pending[req.ID] = respChan
+	log.Printf("[debug] Registered pending request: ID=%s, Method=%s, Path=%s", req.ID, req.Method, req.Path)
 	tc.pendingMu.Unlock()
 
 	defer func() {
 		tc.pendingMu.Lock()
 		delete(tc.pending, req.ID)
+		log.Printf("[debug] Removed pending request: ID=%s", req.ID)
 		tc.pendingMu.Unlock()
 	}()
 
@@ -159,20 +161,28 @@ func (tc *TunnelConnection) SendRequest(req *TunnelRequest) (*TunnelResponse, er
 		return nil, err
 	}
 
+	log.Printf("[debug] Sending request to tunnel-client: %d bytes", len(data))
+
 	tc.writeMu.Lock()
 	err = tc.conn.WriteMessage(websocket.TextMessage, data)
 	tc.writeMu.Unlock()
 
 	if err != nil {
+		log.Printf("[debug] Failed to send request: %v", err)
 		return nil, err
 	}
 
+	log.Printf("[debug] Request sent, waiting for response (timeout=120s)")
+
 	select {
 	case resp := <-respChan:
+		log.Printf("[debug] Received response from channel: StatusCode=%d", resp.StatusCode)
 		return resp, nil
 	case <-time.After(120 * time.Second):
+		log.Printf("[debug] Request timeout for ID=%s", req.ID)
 		return nil, ErrTunnelTimeout
 	case <-tc.closeChan:
+		log.Printf("[debug] Connection closed while waiting for ID=%s", req.ID)
 		return nil, ErrTunnelNotFound
 	}
 }
@@ -192,18 +202,33 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 			return
 		}
 
+		log.Printf("[debug] Received WebSocket message from %s: %d bytes", tc.subdomain, len(message))
+
 		var resp TunnelResponse
 		if err := json.Unmarshal(message, &resp); err != nil {
-			log.Printf("[tunnel] Failed to unmarshal response: %v", err)
+			log.Printf("[tunnel] Failed to unmarshal response: %v (raw: %s)", err, string(message))
 			continue
 		}
 
+		log.Printf("[debug] Parsed response: ID=%s, StatusCode=%d, BodyLen=%d", resp.ID, resp.StatusCode, len(resp.Body))
+
 		tc.pendingMu.RLock()
+		pendingKeys := make([]string, 0, len(tc.pending))
+		for k := range tc.pending {
+			pendingKeys = append(pendingKeys, k)
+		}
+		log.Printf("[debug] Pending request IDs: %v", pendingKeys)
+
 		if ch, ok := tc.pending[resp.ID]; ok {
+			log.Printf("[debug] Found pending channel for ID=%s, sending response", resp.ID)
 			select {
 			case ch <- &resp:
+				log.Printf("[debug] Response sent to channel for ID=%s", resp.ID)
 			default:
+				log.Printf("[debug] Channel full/closed for ID=%s, response dropped", resp.ID)
 			}
+		} else {
+			log.Printf("[debug] No pending request found for ID=%s", resp.ID)
 		}
 		tc.pendingMu.RUnlock()
 	}
