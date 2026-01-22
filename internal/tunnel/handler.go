@@ -90,13 +90,17 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		targetPath = "/" + parts[1]
 	}
 
+	log.Printf("[proxy] Incoming request: %s %s -> subdomain=%s, targetPath=%s", r.Method, path, subdomain, targetPath)
+
 	if !h.manager.IsConnected(subdomain) {
+		log.Printf("[proxy] Device not connected: %s", subdomain)
 		http.Error(w, "device not connected", http.StatusServiceUnavailable)
 		return
 	}
 
 	body, err := ReadRequestBody(r)
 	if err != nil {
+		log.Printf("[proxy] Failed to read request body: %v", err)
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
@@ -120,8 +124,11 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		Body:    body,
 	}
 
+	log.Printf("[proxy] Forwarding request ID=%s to tunnel", tunnelReq.ID)
+
 	resp, err := h.manager.ForwardRequest(subdomain, tunnelReq)
 	if err != nil {
+		log.Printf("[proxy] ForwardRequest failed: %v", err)
 		if err == ErrTunnelNotFound {
 			http.Error(w, "device not connected", http.StatusServiceUnavailable)
 		} else if err == ErrTunnelTimeout {
@@ -132,14 +139,23 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[proxy] Got response: StatusCode=%d, BodyLen=%d, Headers=%v", resp.StatusCode, len(resp.Body), resp.Headers)
+
 	for key, value := range resp.Headers {
 		w.Header().Set(key, value)
 	}
 
 	w.WriteHeader(resp.StatusCode)
 	if len(resp.Body) > 0 {
-		w.Write(resp.Body)
+		n, err := w.Write(resp.Body)
+		if err != nil {
+			log.Printf("[proxy] Failed to write response body: %v", err)
+		} else {
+			log.Printf("[proxy] Wrote %d bytes to response", n)
+		}
 	}
+
+	log.Printf("[proxy] Request completed successfully")
 }
 
 var hopByHopHeaders = map[string]bool{
