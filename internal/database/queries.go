@@ -203,3 +203,49 @@ func (db *DB) DeleteExpiredVerificationCodes() error {
 	_, err := db.Exec("DELETE FROM verification_codes WHERE expires_at < ?", time.Now())
 	return err
 }
+
+func (db *DB) CreatePairingRequest(id string, userID int64, pairingCode string, expiresAt time.Time) (*models.PairingRequest, error) {
+	_, err := db.Exec(
+		"INSERT INTO pairing_requests (id, user_id, pairing_code, expires_at) VALUES (?, ?, ?, ?)",
+		id, userID, pairingCode, expiresAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return db.GetPairingRequestByID(id)
+}
+
+func (db *DB) GetPairingRequestByID(id string) (*models.PairingRequest, error) {
+	pr := &models.PairingRequest{}
+	var deviceID sql.NullInt64
+	err := db.QueryRow(
+		"SELECT id, user_id, pairing_code, status, device_id, expires_at, created_at FROM pairing_requests WHERE id = ?",
+		id,
+	).Scan(&pr.ID, &pr.UserID, &pr.PairingCode, &pr.Status, &deviceID, &pr.ExpiresAt, &pr.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if deviceID.Valid {
+		pr.DeviceID = &deviceID.Int64
+	}
+	return pr, nil
+}
+
+func (db *DB) CompletePairingRequest(id string, deviceID int64) error {
+	_, err := db.Exec(
+		"UPDATE pairing_requests SET status = 'completed', device_id = ? WHERE id = ?",
+		deviceID, id,
+	)
+	return err
+}
+
+func (db *DB) DeleteExpiredPairingRequests() (int64, error) {
+	result, err := db.Exec(
+		"DELETE FROM pairing_requests WHERE expires_at < ? AND status = 'pending'",
+		time.Now(),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

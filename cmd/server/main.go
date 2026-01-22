@@ -33,12 +33,14 @@ func main() {
 	authService := services.NewAuthService(db, cfg.JWTSecret)
 	deviceService := services.NewDeviceService(db, cfg)
 	emailService := services.NewEmailService(cfg)
+	pairingService := services.NewPairingService(db, cfg)
 
 	tunnelManager := tunnel.NewManager()
 	tunnelHandler := tunnel.NewHandler(tunnelManager, db)
 
 	authHandler := handlers.NewAuthHandler(authService, emailService)
 	deviceHandler := handlers.NewDeviceHandler(deviceService)
+	pairingHandler := handlers.NewPairingHandler(pairingService)
 
 	authMiddleware := middleware.Auth(authService)
 
@@ -57,6 +59,10 @@ func main() {
 	mux.Handle("DELETE /api/devices/{id}", authMiddleware(http.HandlerFunc(deviceHandler.Delete)))
 	mux.Handle("GET /api/devices/{id}/frpc-config", authMiddleware(http.HandlerFunc(deviceHandler.GetFrpcConfig)))
 
+	mux.Handle("POST /api/pairing", authMiddleware(http.HandlerFunc(pairingHandler.Create)))
+	mux.Handle("GET /api/pairing/{id}/status", authMiddleware(http.HandlerFunc(pairingHandler.GetStatus)))
+	mux.Handle("POST /api/pairing/{id}/complete", authMiddleware(http.HandlerFunc(pairingHandler.Complete)))
+
 	mux.HandleFunc("GET /api/tunnel/{subdomain}", tunnelHandler.HandleTunnelConnect)
 	mux.HandleFunc("/proxy/", tunnelHandler.HandleProxy)
 
@@ -73,6 +79,7 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			db.MarkOfflineDevices(60 * time.Second)
+			db.DeleteExpiredPairingRequests()
 		}
 	}()
 

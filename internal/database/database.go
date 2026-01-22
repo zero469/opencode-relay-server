@@ -70,6 +70,19 @@ func migrate(db *sql.DB) error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
+
+	CREATE TABLE IF NOT EXISTS pairing_requests (
+		id TEXT PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		pairing_code TEXT NOT NULL,
+		status TEXT DEFAULT 'pending',
+		device_id INTEGER,
+		expires_at DATETIME NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+		FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_pairing_requests_user_id ON pairing_requests(user_id);
 	`
 
 	_, err := db.Exec(schema)

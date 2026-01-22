@@ -69,3 +69,29 @@ type ErrorResponse struct {
 type MessageResponse struct {
 	Message string `json:"message"`
 }
+
+type PairingRequest struct {
+	ID          string    `json:"id"`
+	UserID      int64     `json:"user_id"`
+	PairingCode string    `json:"pairing_code"`
+	Status      string    `json:"status"`
+	DeviceID    *int64    `json:"device_id,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type CreatePairingResponse struct {
+	ID          string    `json:"id"`
+	PairingCode string    `json:"pairing_code"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+type PairingStatusResponse struct {
+	Status string  `json:"status"`
+	Device *Device `json:"device,omitempty"`
+}
+
+type CompletePairingRequest struct {
+	PairingCode string `json:"pairing_code"`
+	DeviceName  string `json:"device_name"`
+}
