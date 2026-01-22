@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/zero469/opencode-relay-server/internal/middleware"
 	"github.com/zero469/opencode-relay-server/internal/models"
 	"github.com/zero469/opencode-relay-server/internal/services"
 )
@@ -18,7 +19,7 @@ func NewPairingHandler(pairingService *services.PairingService) *PairingHandler 
 }
 
 func (h *PairingHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int64)
+	userID := middleware.GetUserID(r)
 
 	pr, err := h.pairingService.CreatePairingRequest(userID)
 	if err != nil {
@@ -34,7 +35,7 @@ func (h *PairingHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PairingHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int64)
+	userID := middleware.GetUserID(r)
 	id := extractPairingID(r.URL.Path)
 
 	resp, err := h.pairingService.GetPairingStatus(id, userID)
@@ -55,7 +56,7 @@ func (h *PairingHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PairingHandler) Complete(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int64)
+	userID := middleware.GetUserID(r)
 	id := extractPairingID(r.URL.Path)
 
 	var req models.CompletePairingRequest
