@@ -97,14 +97,25 @@ install_tunnel_client() {
     echo -e "${GREEN}tunnel-client installed to $INSTALL_DIR/tunnel-client${NC}"
 }
 
-cleanup_old_install() {
+stop_running_tunnel() {
+    echo -e "${BLUE}Stopping existing tunnel-client...${NC}"
+    
     if [ "$OS" = "darwin" ]; then
         launchctl unload "$HOME/Library/LaunchAgents/com.opencode.relay.plist" 2>/dev/null || true
+        pkill -f "tunnel-client" 2>/dev/null || true
+    else
+        systemctl --user stop opencode-relay 2>/dev/null || true
+        pkill -f "tunnel-client" 2>/dev/null || true
+    fi
+    
+    sleep 1
+}
+
+cleanup_old_install() {
+    if [ "$OS" = "darwin" ]; then
         launchctl unload "$HOME/Library/LaunchAgents/com.opencode.relay.heartbeat.plist" 2>/dev/null || true
         rm -f "$HOME/Library/LaunchAgents/com.opencode.relay.heartbeat.plist"
     else
-        systemctl --user stop opencode-relay 2>/dev/null || true
-        systemctl --user disable opencode-relay 2>/dev/null || true
         systemctl --user stop opencode-relay-heartbeat.timer 2>/dev/null || true
         systemctl --user disable opencode-relay-heartbeat.timer 2>/dev/null || true
         rm -f "$HOME/.config/systemd/user/opencode-relay-heartbeat.timer"
@@ -126,16 +137,11 @@ main() {
     detect_platform
     
     if [ -f "$INSTALL_DIR/tunnel-client" ]; then
-        echo -e "${YELLOW}tunnel-client already installed at $INSTALL_DIR/tunnel-client${NC}"
-        echo "Do you want to reinstall? (y/n)"
-        read -r reinstall < /dev/tty
-        if [ "$reinstall" = "y" ]; then
-            install_tunnel_client
-        fi
-    else
-        install_tunnel_client
+        echo -e "${YELLOW}tunnel-client already installed. Updating...${NC}"
+        stop_running_tunnel
     fi
     
+    install_tunnel_client
     cleanup_old_install
     
     echo ""
@@ -143,17 +149,14 @@ main() {
     echo -e "${GREEN}   Installation Complete!                       ${NC}"
     echo -e "${GREEN}================================================${NC}"
     echo ""
-    echo -e "${BLUE}Next steps:${NC}"
+    echo -e "${BLUE}Next step:${NC}"
     echo ""
-    echo "1. Login with your account:"
-    echo -e "   ${YELLOW}$INSTALL_DIR/tunnel-client login${NC}"
+    echo "Run tunnel-client:"
+    echo -e "   ${YELLOW}$INSTALL_DIR/tunnel-client${NC}"
     echo ""
-    echo "2. Start the tunnel (displays QR code for pairing):"
-    echo -e "   ${YELLOW}$INSTALL_DIR/tunnel-client start${NC}"
+    echo "It will guide you through login and pairing automatically."
     echo ""
-    echo "3. Scan the QR code with OpenCode Anywhere app to pair"
-    echo ""
-    echo -e "${BLUE}The tunnel will auto-start on boot after first pairing.${NC}"
+    echo -e "${BLUE}The tunnel will auto-start on boot after pairing.${NC}"
     echo ""
     
     if [ -f /usr/local/bin/tunnel-client ]; then
