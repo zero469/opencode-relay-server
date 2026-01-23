@@ -102,8 +102,8 @@ type SSEEvent struct {
 }
 
 type TunnelEvent struct {
-	Event string          `json:"event"`
-	Data  json.RawMessage `json:"data"`
+	Event string `json:"event"`
+	Data  string `json:"data"`
 }
 
 type TunnelClient struct {
@@ -703,10 +703,9 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 			log.Printf("[SSE] Failed to encrypt event: %v", err)
 			return
 		}
-		encryptedJSON, _ := json.Marshal(string(encrypted))
-		tunnelEvent.Data = encryptedJSON
+		tunnelEvent.Data = string(encrypted)
 	} else {
-		tunnelEvent.Data = eventJSON
+		tunnelEvent.Data = string(eventJSON)
 	}
 
 	data, _ := json.Marshal(tunnelEvent)

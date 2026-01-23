@@ -33,8 +33,8 @@ type TunnelResponse struct {
 }
 
 type TunnelEvent struct {
-	Event string          `json:"event"`
-	Data  json.RawMessage `json:"data"`
+	Event string `json:"event"`
+	Data  string `json:"data"`
 }
 
 type TunnelConnection struct {
@@ -327,7 +327,7 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 	return nil
 }
 
-func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
+func (m *Manager) broadcastEvent(subdomain string, data string) {
 	m.mu.RLock()
 	clients := m.eventClients[subdomain]
 	if clients == nil || len(clients) == 0 {
@@ -343,7 +343,7 @@ func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
 
 	for _, client := range clientList {
 		client.writeMu.Lock()
-		err := client.conn.WriteMessage(websocket.TextMessage, data)
+		err := client.conn.WriteMessage(websocket.TextMessage, []byte(data))
 		client.writeMu.Unlock()
 		if err != nil {
 			log.Printf("[events] Failed to send to client: %v", err)
