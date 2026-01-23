@@ -224,7 +224,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 
 		var tunnelEvent TunnelEvent
 		if err := json.Unmarshal(message, &tunnelEvent); err == nil && tunnelEvent.Event == "sse" {
-			m.broadcastEvent(tc.subdomain, tunnelEvent.Data)
+			m.broadcastEvent(tc.subdomain, message)
 			continue
 		}
 
@@ -327,7 +327,7 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 	return nil
 }
 
-func (m *Manager) broadcastEvent(subdomain string, data string) {
+func (m *Manager) broadcastEvent(subdomain string, data []byte) {
 	m.mu.RLock()
 	clients := m.eventClients[subdomain]
 	if clients == nil || len(clients) == 0 {
@@ -343,7 +343,7 @@ func (m *Manager) broadcastEvent(subdomain string, data string) {
 
 	for _, client := range clientList {
 		client.writeMu.Lock()
-		err := client.conn.WriteMessage(websocket.TextMessage, []byte(data))
+		err := client.conn.WriteMessage(websocket.TextMessage, data)
 		client.writeMu.Unlock()
 		if err != nil {
 			log.Printf("[events] Failed to send to client: %v", err)
