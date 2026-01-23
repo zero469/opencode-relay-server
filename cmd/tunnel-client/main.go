@@ -96,12 +96,24 @@ type TunnelResponse struct {
 	Body       []byte            `json:"body"`
 }
 
+type SSEEvent struct {
+	Type       string          `json:"type"`
+	Properties json.RawMessage `json:"properties"`
+}
+
+type TunnelEvent struct {
+	Event string          `json:"event"`
+	Data  json.RawMessage `json:"data"`
+}
+
 type TunnelClient struct {
-	config     *DeviceConfig
-	localPort  string
-	conn       *websocket.Conn
-	writeMu    sync.Mutex
-	httpClient *http.Client
+	config       *DeviceConfig
+	localPort    string
+	conn         *websocket.Conn
+	writeMu      sync.Mutex
+	httpClient   *http.Client
+	sseStopChan  chan struct{}
+	sseWaitGroup sync.WaitGroup
 }
 
 func main() {
@@ -487,8 +499,16 @@ func (c *TunnelClient) connect() error {
 
 	conn.SetPongHandler(func(string) error { return nil })
 
+	c.sseStopChan = make(chan struct{})
+	c.sseWaitGroup.Add(1)
+	go c.subscribeSSE()
+
 	done := make(chan struct{})
-	defer close(done)
+	defer func() {
+		close(done)
+		close(c.sseStopChan)
+		c.sseWaitGroup.Wait()
+	}()
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -540,6 +560,158 @@ func (c *TunnelClient) buildWebSocketURL() string {
 
 	log.Printf("[debug] WebSocket URL: %s (subdomain: %s)", u.String(), c.config.Subdomain)
 	return u.String()
+}
+
+func (c *TunnelClient) subscribeSSE() {
+	defer c.sseWaitGroup.Done()
+
+	sseURL := fmt.Sprintf("http://localhost:%s/event", c.localPort)
+	log.Printf("[SSE] Subscribing to %s", sseURL)
+
+	for {
+		select {
+		case <-c.sseStopChan:
+			log.Printf("[SSE] Stopping subscription")
+			return
+		default:
+		}
+
+		err := c.connectSSE(sseURL)
+		if err != nil {
+			log.Printf("[SSE] Connection error: %v, reconnecting in 3s...", err)
+			select {
+			case <-c.sseStopChan:
+				return
+			case <-time.After(3 * time.Second):
+			}
+		}
+	}
+}
+
+func (c *TunnelClient) connectSSE(sseURL string) error {
+	req, err := http.NewRequest("GET", sseURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("SSE returned status %d", resp.StatusCode)
+	}
+
+	log.Printf("[SSE] Connected to OpenCode events")
+
+	reader := resp.Body
+	buf := make([]byte, 0, 4096)
+	tmp := make([]byte, 1024)
+
+	for {
+		select {
+		case <-c.sseStopChan:
+			return nil
+		default:
+		}
+
+		n, err := reader.Read(tmp)
+		if err != nil {
+			if err == io.EOF {
+				return fmt.Errorf("SSE connection closed")
+			}
+			return err
+		}
+
+		buf = append(buf, tmp[:n]...)
+
+		for {
+			idx := bytes.Index(buf, []byte("\n\n"))
+			if idx == -1 {
+				break
+			}
+
+			eventData := buf[:idx]
+			buf = buf[idx+2:]
+
+			c.processSSEEvent(eventData)
+		}
+	}
+}
+
+func (c *TunnelClient) processSSEEvent(eventData []byte) {
+	lines := bytes.Split(eventData, []byte("\n"))
+	var data []byte
+
+	for _, line := range lines {
+		if bytes.HasPrefix(line, []byte("data:")) {
+			data = bytes.TrimPrefix(line, []byte("data:"))
+			data = bytes.TrimSpace(data)
+		}
+	}
+
+	if len(data) == 0 {
+		return
+	}
+
+	var raw struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		log.Printf("[SSE] Failed to parse event: %v", err)
+		return
+	}
+
+	payload := raw.Payload
+	if payload == nil {
+		payload = data
+	}
+
+	var event SSEEvent
+	if err := json.Unmarshal(payload, &event); err != nil {
+		log.Printf("[SSE] Failed to parse payload: %v", err)
+		return
+	}
+
+	log.Printf("[SSE] Event: %s", event.Type)
+
+	c.sendEvent(&event)
+}
+
+func (c *TunnelClient) sendEvent(event *SSEEvent) {
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[SSE] Failed to marshal event: %v", err)
+		return
+	}
+
+	var tunnelEvent TunnelEvent
+	tunnelEvent.Event = "sse"
+
+	if c.config.EncryptionKey != "" {
+		encrypted, err := encrypt(eventJSON, c.config.EncryptionKey)
+		if err != nil {
+			log.Printf("[SSE] Failed to encrypt event: %v", err)
+			return
+		}
+		tunnelEvent.Data = encrypted
+	} else {
+		tunnelEvent.Data = eventJSON
+	}
+
+	data, _ := json.Marshal(tunnelEvent)
+	c.writeMu.Lock()
+	err = c.conn.WriteMessage(websocket.TextMessage, data)
+	c.writeMu.Unlock()
+
+	if err != nil {
+		log.Printf("[SSE] Failed to send event: %v", err)
+	}
 }
 
 func (c *TunnelClient) handleRequest(req *TunnelRequest) {

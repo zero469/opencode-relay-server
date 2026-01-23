@@ -32,6 +32,11 @@ type TunnelResponse struct {
 	Body       []byte            `json:"body"`
 }
 
+type TunnelEvent struct {
+	Event string          `json:"event"`
+	Data  json.RawMessage `json:"data"`
+}
+
 type TunnelConnection struct {
 	conn      *websocket.Conn
 	subdomain string
@@ -43,8 +48,17 @@ type TunnelConnection struct {
 	replaced  bool
 }
 
+type EventClient struct {
+	conn      *websocket.Conn
+	subdomain string
+	closeChan chan struct{}
+	closeOnce sync.Once
+	writeMu   sync.Mutex
+}
+
 type Manager struct {
 	connections  map[string]*TunnelConnection
+	eventClients map[string]map[*EventClient]struct{}
 	mu           sync.RWMutex
 	upgrader     websocket.Upgrader
 	onHeartbeat  func(subdomain string)
@@ -53,7 +67,8 @@ type Manager struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		connections: make(map[string]*TunnelConnection),
+		connections:  make(map[string]*TunnelConnection),
+		eventClients: make(map[string]map[*EventClient]struct{}),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true
@@ -204,6 +219,13 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 
 		log.Printf("[debug] Received WebSocket message from %s: %d bytes", tc.subdomain, len(message))
 
+		var tunnelEvent TunnelEvent
+		if err := json.Unmarshal(message, &tunnelEvent); err == nil && tunnelEvent.Event == "sse" {
+			log.Printf("[tunnel] SSE event from %s, broadcasting to clients", tc.subdomain)
+			m.broadcastEvent(tc.subdomain, tunnelEvent.Data)
+			continue
+		}
+
 		var resp TunnelResponse
 		if err := json.Unmarshal(message, &resp); err != nil {
 			log.Printf("[tunnel] Failed to unmarshal response: %v (raw: %s)", err, string(message))
@@ -273,4 +295,117 @@ func ReadRequestBody(r *http.Request) ([]byte, error) {
 
 func GenerateRequestID() string {
 	return time.Now().Format("20060102150405.000000000")
+}
+
+func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, subdomain string) error {
+	conn, err := m.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return err
+	}
+
+	client := &EventClient{
+		conn:      conn,
+		subdomain: subdomain,
+		closeChan: make(chan struct{}),
+	}
+
+	m.mu.Lock()
+	if m.eventClients[subdomain] == nil {
+		m.eventClients[subdomain] = make(map[*EventClient]struct{})
+	}
+	m.eventClients[subdomain][client] = struct{}{}
+	clientCount := len(m.eventClients[subdomain])
+	m.mu.Unlock()
+
+	log.Printf("[events] Client connected for %s (total: %d)", subdomain, clientCount)
+
+	go client.readLoop(m)
+	go client.pingLoop()
+
+	return nil
+}
+
+func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
+	m.mu.RLock()
+	clients := m.eventClients[subdomain]
+	if clients == nil || len(clients) == 0 {
+		m.mu.RUnlock()
+		log.Printf("[events] No clients for %s, dropping event", subdomain)
+		return
+	}
+
+	clientList := make([]*EventClient, 0, len(clients))
+	for client := range clients {
+		clientList = append(clientList, client)
+	}
+	m.mu.RUnlock()
+
+	log.Printf("[events] Broadcasting to %d clients for %s", len(clientList), subdomain)
+
+	for _, client := range clientList {
+		client.writeMu.Lock()
+		err := client.conn.WriteMessage(websocket.TextMessage, data)
+		client.writeMu.Unlock()
+		if err != nil {
+			log.Printf("[events] Failed to send to client: %v", err)
+			client.Close()
+			m.removeEventClient(client)
+		}
+	}
+}
+
+func (m *Manager) removeEventClient(client *EventClient) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if clients, ok := m.eventClients[client.subdomain]; ok {
+		delete(clients, client)
+		if len(clients) == 0 {
+			delete(m.eventClients, client.subdomain)
+		}
+		log.Printf("[events] Client removed for %s (remaining: %d)", client.subdomain, len(clients))
+	}
+}
+
+func (ec *EventClient) readLoop(m *Manager) {
+	defer func() {
+		ec.Close()
+		m.removeEventClient(ec)
+	}()
+
+	for {
+		_, _, err := ec.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("[events] Read error for %s: %v", ec.subdomain, err)
+			}
+			return
+		}
+	}
+}
+
+func (ec *EventClient) pingLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ec.writeMu.Lock()
+			err := ec.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
+			ec.writeMu.Unlock()
+			if err != nil {
+				return
+			}
+		case <-ec.closeChan:
+			return
+		}
+	}
+}
+
+func (ec *EventClient) Close() {
+	ec.closeOnce.Do(func() {
+		close(ec.closeChan)
+		ec.conn.Close()
+	})
 }

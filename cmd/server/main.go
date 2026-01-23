@@ -64,6 +64,7 @@ func main() {
 	mux.Handle("POST /api/pairing/{id}/complete", authMiddleware(http.HandlerFunc(pairingHandler.Complete)))
 
 	mux.HandleFunc("GET /api/tunnel/{subdomain}", tunnelHandler.HandleTunnelConnect)
+	mux.HandleFunc("GET /api/events/{subdomain}", tunnelHandler.HandleEventConnect)
 	mux.HandleFunc("/proxy/", tunnelHandler.HandleProxy)
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {

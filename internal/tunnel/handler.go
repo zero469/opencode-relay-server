@@ -76,6 +76,37 @@ func (h *Handler) HandleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) HandleEventConnect(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 4 {
+		http.Error(w, "subdomain required", http.StatusBadRequest)
+		return
+	}
+	subdomain := parts[3]
+
+	device, err := h.db.GetDeviceBySubdomain(subdomain)
+	if err != nil {
+		log.Printf("[events] Device not found: %s", subdomain)
+		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+
+	authUser := r.URL.Query().Get("auth_user")
+	authPassword := r.URL.Query().Get("auth_password")
+
+	if authUser != device.AuthUser || authPassword != device.AuthPassword {
+		log.Printf("[events] Auth failed for device: %s", subdomain)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.manager.HandleEventWebSocket(w, r, subdomain); err != nil {
+		log.Printf("[events] WebSocket upgrade failed for %s: %v", subdomain, err)
+		return
+	}
+}
+
 func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	parts := strings.SplitN(strings.TrimPrefix(path, "/proxy/"), "/", 2)
