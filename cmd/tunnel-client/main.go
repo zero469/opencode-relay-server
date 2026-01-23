@@ -688,8 +688,6 @@ func (c *TunnelClient) processSSEEvent(eventData []byte) {
 }
 
 func (c *TunnelClient) sendEvent(event *SSEEvent) {
-	log.Printf("[SSE] sendEvent called for: %s", event.Type)
-
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		log.Printf("[SSE] Failed to marshal event: %v", err)
@@ -707,21 +705,13 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 		}
 		encryptedJSON, _ := json.Marshal(string(encrypted))
 		tunnelEvent.Data = encryptedJSON
-		log.Printf("[SSE] Encrypted event, data len: %d", len(encryptedJSON))
 	} else {
 		tunnelEvent.Data = eventJSON
-		log.Printf("[SSE] Unencrypted event, data len: %d", len(eventJSON))
 	}
 
 	data, _ := json.Marshal(tunnelEvent)
-	preview := 100
-	if len(data) < preview {
-		preview = len(data)
-	}
-	log.Printf("[SSE] Sending message: %d bytes, first 100: %s", len(data), string(data[:preview]))
 	c.writeMu.Lock()
 	err = c.conn.WriteMessage(websocket.TextMessage, data)
-	log.Printf("[SSE] Sent event to relay, err: %v", err)
 	c.writeMu.Unlock()
 
 	if err != nil {

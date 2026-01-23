@@ -210,7 +210,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 	}()
 
 	for {
-		msgType, message, err := tc.conn.ReadMessage()
+		_, message, err := tc.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("[tunnel] Read error for %s: %v", tc.subdomain, err)
@@ -218,22 +218,12 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 			return
 		}
 
-		log.Printf("[debug] Received WebSocket message from %s: type=%d, %d bytes", tc.subdomain, msgType, len(message))
-
 		if len(message) == 0 {
-			log.Printf("[tunnel] WARNING: Empty message from %s, skipping", tc.subdomain)
 			continue
 		}
 
-		preview := string(message)
-		if len(preview) > 200 {
-			preview = preview[:200] + "..."
-		}
-		log.Printf("[debug] Message preview from %s: %s", tc.subdomain, preview)
-
 		var tunnelEvent TunnelEvent
 		if err := json.Unmarshal(message, &tunnelEvent); err == nil && tunnelEvent.Event == "sse" {
-			log.Printf("[tunnel] SSE event from %s, data len=%d, broadcasting to clients", tc.subdomain, len(tunnelEvent.Data))
 			m.broadcastEvent(tc.subdomain, tunnelEvent.Data)
 			continue
 		}
@@ -338,13 +328,10 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 }
 
 func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
-	log.Printf("[events] broadcastEvent called for %s, data len=%d", subdomain, len(data))
-
 	m.mu.RLock()
 	clients := m.eventClients[subdomain]
 	if clients == nil || len(clients) == 0 {
 		m.mu.RUnlock()
-		log.Printf("[events] No clients for %s, dropping event", subdomain)
 		return
 	}
 
@@ -354,8 +341,6 @@ func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
 	}
 	m.mu.RUnlock()
 
-	log.Printf("[events] Broadcasting to %d clients for %s, data len=%d", len(clientList), subdomain, len(data))
-
 	for _, client := range clientList {
 		client.writeMu.Lock()
 		err := client.conn.WriteMessage(websocket.TextMessage, data)
@@ -364,8 +349,6 @@ func (m *Manager) broadcastEvent(subdomain string, data json.RawMessage) {
 			log.Printf("[events] Failed to send to client: %v", err)
 			client.Close()
 			m.removeEventClient(client)
-		} else {
-			log.Printf("[events] Successfully sent %d bytes to client for %s", len(data), subdomain)
 		}
 	}
 }
