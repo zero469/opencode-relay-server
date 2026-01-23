@@ -101,10 +101,12 @@ func (h *Handler) HandleEventConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[events] iOS client connecting for subdomain: %s", subdomain)
 	if err := h.manager.HandleEventWebSocket(w, r, subdomain); err != nil {
 		log.Printf("[events] WebSocket upgrade failed for %s: %v", subdomain, err)
 		return
 	}
+	log.Printf("[events] iOS client connected successfully for subdomain: %s", subdomain)
 }
 
 func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
