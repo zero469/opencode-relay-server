@@ -705,8 +705,9 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 			log.Printf("[SSE] Failed to encrypt event: %v", err)
 			return
 		}
-		tunnelEvent.Data = encrypted
-		log.Printf("[SSE] Encrypted event, data len: %d", len(encrypted))
+		encryptedJSON, _ := json.Marshal(string(encrypted))
+		tunnelEvent.Data = encryptedJSON
+		log.Printf("[SSE] Encrypted event, data len: %d", len(encryptedJSON))
 	} else {
 		tunnelEvent.Data = eventJSON
 		log.Printf("[SSE] Unencrypted event, data len: %d", len(eventJSON))
