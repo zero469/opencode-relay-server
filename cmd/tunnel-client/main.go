@@ -14,8 +14,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -228,6 +230,13 @@ func cmdStart() {
 	}
 
 	fmt.Printf("\n✓ Device \"%s\" paired successfully!\n", device.DeviceName)
+
+	if err := setupAutoStart(localPort); err != nil {
+		fmt.Printf("⚠ Could not set up auto-start: %v\n", err)
+	} else {
+		fmt.Println("✓ Auto-start configured")
+	}
+
 	fmt.Println("✓ Starting tunnel...")
 
 	runTunnel(device, localPort)
@@ -644,6 +653,126 @@ func saveDeviceConfig(config *DeviceConfig) error {
 	}
 	data, _ := json.MarshalIndent(config, "", "  ")
 	return os.WriteFile(filepath.Join(dir, deviceFileName), data, 0600)
+}
+
+func setupAutoStart(localPort string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return setupLaunchd(localPort)
+	case "linux":
+		return setupSystemd(localPort)
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
+}
+
+func setupLaunchd(localPort string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	launchAgentsDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(launchAgentsDir, 0755); err != nil {
+		return err
+	}
+
+	logDir := filepath.Join(home, ".opencode-relay")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return err
+	}
+
+	plistPath := filepath.Join(launchAgentsDir, "com.opencode.relay.plist")
+	logPath := filepath.Join(logDir, "tunnel.log")
+
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.opencode.relay</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>start</string>
+        <string>-port</string>
+        <string>%s</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>%s</string>
+    <key>StandardErrorPath</key>
+    <string>%s</string>
+</dict>
+</plist>
+`, execPath, localPort, logPath, logPath)
+
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		return err
+	}
+
+	exec.Command("launchctl", "unload", plistPath).Run()
+
+	cmd := exec.Command("launchctl", "load", plistPath)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to load launchd plist: %w", err)
+	}
+
+	return nil
+}
+
+func setupSystemd(localPort string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	systemdDir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(systemdDir, 0755); err != nil {
+		return err
+	}
+
+	servicePath := filepath.Join(systemdDir, "opencode-relay.service")
+
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=OpenCode Relay Tunnel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%s start -port %s
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`, execPath, localPort)
+
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		return err
+	}
+
+	exec.Command("systemctl", "--user", "daemon-reload").Run()
+
+	cmd := exec.Command("systemctl", "--user", "enable", "opencode-relay.service")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to enable systemd service: %w", err)
+	}
+
+	return nil
 }
 
 func generateEncryptionKey() string {
