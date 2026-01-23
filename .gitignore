@@ -15,3 +15,5 @@ Thumbs.db
 
 # Database
 *.db
+tunnel-client-*
+relay-server

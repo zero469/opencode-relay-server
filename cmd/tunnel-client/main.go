@@ -203,6 +203,8 @@ func cmdStart() {
 		}
 	}
 
+	waitForOpenCode(localPort)
+
 	device, err := loadDeviceConfig()
 	if err == nil && device != nil {
 		runTunnel(device, localPort)
@@ -274,6 +276,34 @@ func cmdLogout() {
 	os.Remove(devicePath)
 
 	fmt.Println("✓ Logged out")
+}
+
+func waitForOpenCode(port string) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := fmt.Sprintf("http://localhost:%s", port)
+
+	resp, err := client.Get(url)
+	if err == nil {
+		resp.Body.Close()
+		return
+	}
+
+	fmt.Printf("\n⚠ OpenCode not detected on port %s\n", port)
+	fmt.Println("  Please start OpenCode, or specify a different port:")
+	fmt.Printf("    tunnel-client start -port <port>\n\n")
+	fmt.Println("  Waiting for OpenCode to start...")
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			fmt.Println("✓ OpenCode detected!")
+			return
+		}
+	}
 }
 
 func login(relayURL, email, password string) (string, string, error) {
