@@ -73,8 +73,9 @@ func NewManager() *Manager {
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
-			ReadBufferSize:  1024 * 64,
-			WriteBufferSize: 1024 * 64,
+			ReadBufferSize:    1024 * 64,
+			WriteBufferSize:   1024 * 64,
+			EnableCompression: false,
 		},
 	}
 }

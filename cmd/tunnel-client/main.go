@@ -488,7 +488,11 @@ func isAbnormalClose(err error) bool {
 func (c *TunnelClient) connect() error {
 	wsURL := c.buildWebSocketURL()
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	dialer := websocket.Dialer{
+		HandshakeTimeout:  10 * time.Second,
+		EnableCompression: false,
+	}
+	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
@@ -709,6 +713,11 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 	}
 
 	data, _ := json.Marshal(tunnelEvent)
+	preview := 100
+	if len(data) < preview {
+		preview = len(data)
+	}
+	log.Printf("[SSE] Sending message: %d bytes, first 100: %s", len(data), string(data[:preview]))
 	c.writeMu.Lock()
 	err = c.conn.WriteMessage(websocket.TextMessage, data)
 	log.Printf("[SSE] Sent event to relay, err: %v", err)
