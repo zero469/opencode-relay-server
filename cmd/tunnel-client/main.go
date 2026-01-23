@@ -661,6 +661,8 @@ func setupAutoStart(localPort string) error {
 		return setupLaunchd(localPort)
 	case "linux":
 		return setupSystemd(localPort)
+	case "windows":
+		return setupWindowsTask(localPort)
 	default:
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
@@ -770,6 +772,30 @@ WantedBy=default.target
 	cmd := exec.Command("systemctl", "--user", "enable", "opencode-relay.service")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to enable systemd service: %w", err)
+	}
+
+	return nil
+}
+
+func setupWindowsTask(localPort string) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	taskName := "OpenCodeRelay"
+
+	exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").Run()
+
+	cmd := exec.Command("schtasks", "/Create",
+		"/TN", taskName,
+		"/TR", fmt.Sprintf(`"%s" start -port %s`, execPath, localPort),
+		"/SC", "ONLOGON",
+		"/RL", "HIGHEST",
+		"/F")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create scheduled task: %w", err)
 	}
 
 	return nil
