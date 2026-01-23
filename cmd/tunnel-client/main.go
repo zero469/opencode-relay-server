@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -440,21 +441,36 @@ func runTunnel(config *DeviceConfig, localPort string) {
 
 func (c *TunnelClient) connectWithRetry() {
 	backoff := time.Second
-	maxBackoff := 30 * time.Second
+	maxBackoff := 10 * time.Second
 
 	for {
 		err := c.connect()
 		if err != nil {
-			log.Printf("Connection error: %v. Retrying in %v...", err, backoff)
-			time.Sleep(backoff)
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
+			if isAbnormalClose(err) {
+				log.Printf("Connection lost. Reconnecting immediately...")
+				backoff = time.Second
+			} else {
+				log.Printf("Connection error: %v. Retrying in %v...", err, backoff)
+				time.Sleep(backoff)
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
 			}
 			continue
 		}
 		backoff = time.Second
 	}
+}
+
+func isAbnormalClose(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "1006") ||
+		strings.Contains(errStr, "unexpected EOF") ||
+		strings.Contains(errStr, "connection reset")
 }
 
 func (c *TunnelClient) connect() error {
