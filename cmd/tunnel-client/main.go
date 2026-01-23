@@ -105,13 +105,11 @@ type TunnelClient struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		cmdStart()
+		return
 	}
 
 	switch os.Args[1] {
-	case "login":
-		cmdLogin()
 	case "start":
 		cmdStart()
 	case "status":
@@ -131,29 +129,23 @@ func printUsage() {
 	fmt.Println(`OpenCode Tunnel Client
 
 Usage:
-  tunnel-client <command> [options]
+  tunnel-client [command] [options]
 
 Commands:
-  login     Login with your account
-  start     Start the tunnel (will show QR code if not paired)
+  start     Start the tunnel (default, can be omitted)
   status    Show current status
   logout    Logout and clear credentials
 
-Options for 'start':
+Options:
   -port <port>   Local OpenCode port (default: 4096)
   -relay <url>   Relay server URL (default: https://opencode-relay.azurewebsites.net)`)
 }
 
-func cmdLogin() {
-	relay := defaultRelay
-	if len(os.Args) > 2 {
-		for i := 2; i < len(os.Args); i++ {
-			if os.Args[i] == "-relay" && i+1 < len(os.Args) {
-				relay = os.Args[i+1]
-				i++
-			}
-		}
-	}
+func doLogin(relay string) *AuthConfig {
+	fmt.Println("\n┌─────────────────────────────────────────────┐")
+	fmt.Println("│  Login to OpenCode Relay                    │")
+	fmt.Println("└─────────────────────────────────────────────┘")
+	fmt.Println()
 
 	fmt.Print("Email: ")
 	var email string
@@ -181,14 +173,15 @@ func cmdLogin() {
 		log.Fatalf("Failed to save credentials: %v", err)
 	}
 
-	fmt.Printf("✓ Logged in as %s\n", userEmail)
+	fmt.Printf("✓ Logged in as %s\n\n", userEmail)
+	return auth
 }
 
 func cmdStart() {
 	localPort := defaultPort
-	relay := ""
+	relay := defaultRelay
 
-	for i := 2; i < len(os.Args); i++ {
+	for i := 1; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "-port":
 			if i+1 < len(os.Args) {
@@ -213,11 +206,10 @@ func cmdStart() {
 
 	auth, err := loadAuthConfig()
 	if err != nil {
-		fmt.Println("Not logged in. Please run: tunnel-client login")
-		os.Exit(1)
+		auth = doLogin(relay)
 	}
 
-	if relay == "" {
+	if relay == defaultRelay && auth.RelayURL != "" {
 		relay = auth.RelayURL
 	}
 
