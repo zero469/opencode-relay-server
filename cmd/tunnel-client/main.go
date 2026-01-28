@@ -401,9 +401,7 @@ func startOpenCode(config *OpenCodeConfig, port string) bool {
 	}
 
 	args := parts[1:]
-	if port != defaultPort {
-		args = append(args, "-port", port)
-	}
+	args = append(args, "--port", port)
 
 	cmd := exec.Command(parts[0], args...)
 	cmd.Dir = config.WorkDir
