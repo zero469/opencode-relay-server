@@ -355,7 +355,7 @@ func waitForOpenCode(port string) {
 
 	if strings.HasPrefix(workdir, "~") {
 		home, _ := os.UserHomeDir()
-		workdir = filepath.Join(home, workdir[1:])
+		workdir = filepath.Join(home, strings.TrimPrefix(workdir[1:], "/"))
 	}
 
 	if _, err := os.Stat(workdir); os.IsNotExist(err) {
