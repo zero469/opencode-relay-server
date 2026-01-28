@@ -231,10 +231,18 @@ func cmdStart() {
 		device, err := loadDeviceConfig()
 		if err == nil && device != nil {
 			fmt.Printf("  Using device: %s\n", device.DeviceName)
+			fmt.Printf("  Connecting to relay server...\n")
 			if runTunnel(device, localPort) {
 				return
 			}
-			fmt.Println("  Connection failed. Re-pairing...")
+			fmt.Println()
+			fmt.Println("  ⚠ Connection failed. This could be because:")
+			fmt.Println("    - The device was deleted from your account")
+			fmt.Println("    - Network connectivity issues")
+			fmt.Println("    - The relay server is temporarily unavailable")
+			fmt.Println()
+			fmt.Println("  Clearing old device config and starting fresh pairing...")
+			fmt.Println()
 			clearDeviceConfig()
 		}
 
@@ -249,6 +257,11 @@ func cmdStart() {
 
 		device, err = startPairing(relay, auth.Token, localPort)
 		if err != nil {
+			if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") {
+				fmt.Println("  Session expired. Please login again.")
+				clearAuthConfig()
+				continue
+			}
 			log.Printf("Pairing failed: %v. Retrying in 5s...", err)
 			time.Sleep(5 * time.Second)
 			continue
@@ -662,6 +675,11 @@ func clearDeviceConfig() {
 	os.Remove(path)
 }
 
+func clearAuthConfig() {
+	path := filepath.Join(getConfigDir(), authFileName)
+	os.Remove(path)
+}
+
 func (c *TunnelClient) connect() error {
 	wsURL := c.buildWebSocketURL()
 
@@ -1033,6 +1051,9 @@ func loadDeviceConfig() (*DeviceConfig, error) {
 	var config DeviceConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
+	}
+	if config.Subdomain == "" || config.AuthUser == "" || config.AuthPassword == "" {
+		return nil, fmt.Errorf("incomplete device config")
 	}
 	return &config, nil
 }

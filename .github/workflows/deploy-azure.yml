@@ -67,6 +67,13 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Enable WebSockets
+        run: |
+          az webapp config set \
+            --name opencode-relay \
+            --resource-group opencode-relay-rg \
+            --web-sockets-enabled true
+
       - name: Deploy to Azure Web App
         run: |
           az webapp config container set \
