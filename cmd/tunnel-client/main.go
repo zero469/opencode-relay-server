@@ -57,6 +57,7 @@ type DeviceConfig struct {
 type OpenCodeConfig struct {
 	Command   string `json:"command"`
 	WorkDir   string `json:"workdir"`
+	Port      string `json:"port,omitempty"`
 	AutoStart bool   `json:"auto_start"`
 }
 
@@ -200,12 +201,14 @@ func doLogin(relay string) *AuthConfig {
 func cmdStart() {
 	localPort := defaultPort
 	relay := defaultRelay
+	portFromArg := false
 
 	for i := 1; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "-port":
 			if i+1 < len(os.Args) {
 				localPort = os.Args[i+1]
+				portFromArg = true
 				i++
 			}
 		case "-relay":
@@ -213,6 +216,12 @@ func cmdStart() {
 				relay = os.Args[i+1]
 				i++
 			}
+		}
+	}
+
+	if !portFromArg {
+		if ocConfig, _ := loadOpenCodeConfig(); ocConfig != nil && ocConfig.Port != "" {
+			localPort = ocConfig.Port
 		}
 	}
 
@@ -359,6 +368,7 @@ func waitForOpenCode(port string) {
 	ocConfig = &OpenCodeConfig{
 		Command:   command,
 		WorkDir:   workdir,
+		Port:      port,
 		AutoStart: true,
 	}
 	saveOpenCodeConfig(ocConfig)
