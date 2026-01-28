@@ -229,8 +229,9 @@ func cmdStart() {
 
 	device, err := loadDeviceConfig()
 	if err == nil && device != nil {
-		runTunnel(device, localPort)
-		return
+		if runTunnel(device, localPort) {
+			return
+		}
 	}
 
 	auth, err := loadAuthConfig()
@@ -592,7 +593,7 @@ func pollPairingStatus(relayURL, token, pairingID string, expiresAt time.Time) (
 	}
 }
 
-func runTunnel(config *DeviceConfig, localPort string) {
+func runTunnel(config *DeviceConfig, localPort string) bool {
 	client := &TunnelClient{
 		config:    config,
 		localPort: localPort,
@@ -613,16 +614,31 @@ func runTunnel(config *DeviceConfig, localPort string) {
 		os.Exit(0)
 	}()
 
-	client.connectWithRetry()
+	return client.connectWithRetry()
 }
 
-func (c *TunnelClient) connectWithRetry() {
+func (c *TunnelClient) connectWithRetry() bool {
 	backoff := time.Second
 	maxBackoff := 10 * time.Second
+	authFailCount := 0
 
 	for {
 		err := c.connect()
 		if err != nil {
+			if isAuthError(err) {
+				authFailCount++
+				if authFailCount >= 3 {
+					fmt.Println("\n⚠ Device authentication failed. Device may have been removed.")
+					fmt.Println("  Clearing local device config and re-pairing...")
+					clearDeviceConfig()
+					return false
+				}
+				log.Printf("Authentication error (%d/3): %v", authFailCount, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			authFailCount = 0
 			if isAbnormalClose(err) {
 				log.Printf("Connection lost. Reconnecting immediately...")
 				backoff = time.Second
@@ -637,6 +653,7 @@ func (c *TunnelClient) connectWithRetry() {
 			continue
 		}
 		backoff = time.Second
+		authFailCount = 0
 	}
 }
 
@@ -648,6 +665,22 @@ func isAbnormalClose(err error) bool {
 	return strings.Contains(errStr, "1006") ||
 		strings.Contains(errStr, "unexpected EOF") ||
 		strings.Contains(errStr, "connection reset")
+}
+
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "401") ||
+		strings.Contains(errStr, "403") ||
+		strings.Contains(errStr, "Unauthorized") ||
+		strings.Contains(errStr, "Forbidden")
+}
+
+func clearDeviceConfig() {
+	path := filepath.Join(getConfigDir(), deviceFileName)
+	os.Remove(path)
 }
 
 func (c *TunnelClient) connect() error {
