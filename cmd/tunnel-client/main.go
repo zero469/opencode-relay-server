@@ -229,9 +229,18 @@ func cmdStart() {
 
 	device, err := loadDeviceConfig()
 	if err == nil && device != nil {
-		if runTunnel(device, localPort) {
-			return
+		fmt.Printf("\n  Existing device found: %s\n", device.DeviceName)
+		fmt.Print("  Use existing device? [Y/n]: ")
+		var answer string
+		fmt.Scanln(&answer)
+		answer = strings.ToLower(strings.TrimSpace(answer))
+
+		if answer == "" || answer == "y" || answer == "yes" {
+			if runTunnel(device, localPort) {
+				return
+			}
 		}
+		clearDeviceConfig()
 	}
 
 	auth, err := loadAuthConfig()
