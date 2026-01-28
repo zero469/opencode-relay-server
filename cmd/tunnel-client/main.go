@@ -225,54 +225,44 @@ func cmdStart() {
 		}
 	}
 
-	waitForOpenCode(localPort)
+	ensureOpenCodeRunning(localPort)
 
-	device, err := loadDeviceConfig()
-	if err == nil && device != nil {
-		fmt.Printf("\n  Existing device found: %s\n", device.DeviceName)
-		fmt.Print("  Use existing device? [Y/n]: ")
-		var answer string
-		fmt.Scanln(&answer)
-		answer = strings.ToLower(strings.TrimSpace(answer))
-
-		if answer == "" || answer == "y" || answer == "yes" {
+	for {
+		device, err := loadDeviceConfig()
+		if err == nil && device != nil {
+			fmt.Printf("  Using device: %s\n", device.DeviceName)
 			if runTunnel(device, localPort) {
 				return
 			}
+			fmt.Println("  Connection failed. Re-pairing...")
+			clearDeviceConfig()
 		}
-		clearDeviceConfig()
+
+		auth, err := loadAuthConfig()
+		if err != nil {
+			auth = doLogin(relay)
+		}
+
+		if relay == defaultRelay && auth.RelayURL != "" {
+			relay = auth.RelayURL
+		}
+
+		device, err = startPairing(relay, auth.Token, localPort)
+		if err != nil {
+			log.Printf("Pairing failed: %v. Retrying in 5s...", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		device.RelayURL = relay
+		if err := saveDeviceConfig(device); err != nil {
+			log.Fatalf("Failed to save device config: %v", err)
+		}
+
+		fmt.Printf("\n✓ Device \"%s\" paired successfully!\n", device.DeviceName)
+
+		setupAutoStart(localPort)
 	}
-
-	auth, err := loadAuthConfig()
-	if err != nil {
-		auth = doLogin(relay)
-	}
-
-	if relay == defaultRelay && auth.RelayURL != "" {
-		relay = auth.RelayURL
-	}
-
-	device, err = startPairing(relay, auth.Token, localPort)
-	if err != nil {
-		log.Fatalf("Pairing failed: %v", err)
-	}
-
-	device.RelayURL = relay
-	if err := saveDeviceConfig(device); err != nil {
-		log.Fatalf("Failed to save device config: %v", err)
-	}
-
-	fmt.Printf("\n✓ Device \"%s\" paired successfully!\n", device.DeviceName)
-
-	if err := setupAutoStart(localPort); err != nil {
-		fmt.Printf("⚠ Could not set up auto-start: %v\n", err)
-	} else {
-		fmt.Println("✓ Auto-start configured")
-	}
-
-	fmt.Println("✓ Starting tunnel...")
-
-	runTunnel(device, localPort)
 }
 
 func cmdStatus() {
@@ -309,7 +299,7 @@ func cmdLogout() {
 	fmt.Println("✓ Logged out")
 }
 
-func waitForOpenCode(port string) {
+func ensureOpenCodeRunning(port string) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	url := fmt.Sprintf("http://localhost:%s", port)
 
@@ -319,40 +309,30 @@ func waitForOpenCode(port string) {
 		return
 	}
 
-	fmt.Printf("\n⚠ OpenCode not detected on port %s\n", port)
+	fmt.Printf("  OpenCode not detected on port %s\n", port)
 
 	ocConfig, _ := loadOpenCodeConfig()
 	if ocConfig != nil && ocConfig.AutoStart && ocConfig.Command != "" {
-		fmt.Printf("  Starting OpenCode with saved config...\n")
+		fmt.Printf("  Starting OpenCode...\n")
 		if startOpenCode(ocConfig, port) {
 			return
 		}
 	}
 
-	fmt.Print("\n  Would you like to start OpenCode automatically? [Y/n]: ")
-	var answer string
-	fmt.Scanln(&answer)
-	answer = strings.ToLower(strings.TrimSpace(answer))
+	configureAndStartOpenCode(port, client)
+}
 
-	if answer != "" && answer != "y" && answer != "yes" {
-		fmt.Println("\n  Waiting for OpenCode to start manually...")
-		waitForOpenCodeManually(port, client)
-		return
-	}
-
+func configureAndStartOpenCode(port string, client *http.Client) {
 	command := detectOpenCodeCommand()
 	if command == "" {
-		fmt.Println("\n  Could not detect OpenCode installation.")
-		fmt.Println("  Please enter the command to start OpenCode")
+		fmt.Println("  OpenCode not found. Please enter the command to start it")
 		fmt.Print("  (e.g., 'opencode', 'npx opencode'): ")
 		fmt.Scanln(&command)
 		if command == "" {
-			fmt.Println("\n  Waiting for OpenCode to start manually...")
+			fmt.Println("  Waiting for OpenCode to start manually...")
 			waitForOpenCodeManually(port, client)
 			return
 		}
-	} else {
-		fmt.Printf("  Detected OpenCode command: %s\n", command)
 	}
 
 	cwd, _ := os.Getwd()
@@ -375,7 +355,7 @@ func waitForOpenCode(port string) {
 		return
 	}
 
-	ocConfig = &OpenCodeConfig{
+	ocConfig := &OpenCodeConfig{
 		Command:   command,
 		WorkDir:   workdir,
 		Port:      port,
@@ -629,27 +609,18 @@ func runTunnel(config *DeviceConfig, localPort string) bool {
 func (c *TunnelClient) connectWithRetry() bool {
 	backoff := time.Second
 	maxBackoff := 10 * time.Second
-	authFailCount := 0
 
 	for {
 		err := c.connect()
 		if err != nil {
 			if isAuthError(err) {
-				authFailCount++
-				if authFailCount >= 3 {
-					fmt.Println("\n⚠ Device authentication failed. Device may have been removed.")
-					fmt.Println("  Clearing local device config and re-pairing...")
-					clearDeviceConfig()
-					return false
-				}
-				log.Printf("Authentication error (%d/3): %v", authFailCount, err)
-				time.Sleep(2 * time.Second)
-				continue
+				fmt.Println("\n⚠ Device authentication failed. Device may have been removed.")
+				clearDeviceConfig()
+				return false
 			}
 
-			authFailCount = 0
 			if isAbnormalClose(err) {
-				log.Printf("Connection lost. Reconnecting immediately...")
+				log.Printf("Connection lost. Reconnecting...")
 				backoff = time.Second
 			} else {
 				log.Printf("Connection error: %v. Retrying in %v...", err, backoff)
@@ -662,7 +633,6 @@ func (c *TunnelClient) connectWithRetry() bool {
 			continue
 		}
 		backoff = time.Second
-		authFailCount = 0
 	}
 }
 
