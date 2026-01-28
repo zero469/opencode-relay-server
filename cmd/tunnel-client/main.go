@@ -397,10 +397,7 @@ func startOpenCode(config *OpenCodeConfig, port string) bool {
 
 	cmd := exec.Command(parts[0], args...)
 	cmd.Dir = config.WorkDir
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setProcAttr(cmd)
 
 	logDir := filepath.Join(getConfigDir())
 	os.MkdirAll(logDir, 0755)
