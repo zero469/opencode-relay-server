@@ -29,12 +29,13 @@ import (
 )
 
 const (
-	configDir       = ".opencode-tunnel"
-	authFileName    = "auth.json"
-	deviceFileName  = "device.json"
-	defaultRelay    = "https://opencode-relay.azurewebsites.net"
-	defaultPort     = "4096"
-	pairingInterval = 2 * time.Second
+	configDir        = ".opencode-tunnel"
+	authFileName     = "auth.json"
+	deviceFileName   = "device.json"
+	opencodeFileName = "opencode.json"
+	defaultRelay     = "https://opencode-relay.azurewebsites.net"
+	defaultPort      = "4096"
+	pairingInterval  = 2 * time.Second
 )
 
 type AuthConfig struct {
@@ -51,6 +52,12 @@ type DeviceConfig struct {
 	AuthUser      string `json:"auth_user"`
 	AuthPassword  string `json:"auth_password"`
 	EncryptionKey string `json:"encryption_key,omitempty"`
+}
+
+type OpenCodeConfig struct {
+	Command   string `json:"command"`
+	WorkDir   string `json:"workdir"`
+	AutoStart bool   `json:"auto_start"`
 }
 
 type LoginResponse struct {
@@ -294,10 +301,141 @@ func waitForOpenCode(port string) {
 	}
 
 	fmt.Printf("\n⚠ OpenCode not detected on port %s\n", port)
-	fmt.Println("  Please start OpenCode, or specify a different port:")
-	fmt.Printf("    tunnel-client start -port <port>\n\n")
-	fmt.Println("  Waiting for OpenCode to start...")
 
+	ocConfig, _ := loadOpenCodeConfig()
+	if ocConfig != nil && ocConfig.AutoStart && ocConfig.Command != "" {
+		fmt.Printf("  Starting OpenCode with saved config...\n")
+		if startOpenCode(ocConfig, port) {
+			return
+		}
+	}
+
+	fmt.Print("\n  Would you like to start OpenCode automatically? [Y/n]: ")
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	if answer != "" && answer != "y" && answer != "yes" {
+		fmt.Println("\n  Waiting for OpenCode to start manually...")
+		waitForOpenCodeManually(port, client)
+		return
+	}
+
+	command := detectOpenCodeCommand()
+	if command == "" {
+		fmt.Println("\n  Could not detect OpenCode installation.")
+		fmt.Println("  Please enter the command to start OpenCode")
+		fmt.Print("  (e.g., 'opencode', 'npx opencode'): ")
+		fmt.Scanln(&command)
+		if command == "" {
+			fmt.Println("\n  Waiting for OpenCode to start manually...")
+			waitForOpenCodeManually(port, client)
+			return
+		}
+	} else {
+		fmt.Printf("  Detected OpenCode command: %s\n", command)
+	}
+
+	cwd, _ := os.Getwd()
+	fmt.Printf("  Working directory [%s]: ", cwd)
+	var workdir string
+	fmt.Scanln(&workdir)
+	if workdir == "" {
+		workdir = cwd
+	}
+
+	if strings.HasPrefix(workdir, "~") {
+		home, _ := os.UserHomeDir()
+		workdir = filepath.Join(home, workdir[1:])
+	}
+
+	if _, err := os.Stat(workdir); os.IsNotExist(err) {
+		fmt.Printf("  Directory does not exist: %s\n", workdir)
+		fmt.Println("  Waiting for OpenCode to start manually...")
+		waitForOpenCodeManually(port, client)
+		return
+	}
+
+	ocConfig = &OpenCodeConfig{
+		Command:   command,
+		WorkDir:   workdir,
+		AutoStart: true,
+	}
+	saveOpenCodeConfig(ocConfig)
+
+	if !startOpenCode(ocConfig, port) {
+		fmt.Println("  Waiting for OpenCode to start manually...")
+		waitForOpenCodeManually(port, client)
+	}
+}
+
+func detectOpenCodeCommand() string {
+	commands := []string{"opencode", "npx opencode"}
+
+	for _, cmd := range commands {
+		parts := strings.Fields(cmd)
+		path, err := exec.LookPath(parts[0])
+		if err == nil && path != "" {
+			return cmd
+		}
+	}
+	return ""
+}
+
+func startOpenCode(config *OpenCodeConfig, port string) bool {
+	fmt.Printf("  Starting OpenCode in %s...\n", config.WorkDir)
+
+	parts := strings.Fields(config.Command)
+	if len(parts) == 0 {
+		return false
+	}
+
+	args := parts[1:]
+	if port != defaultPort {
+		args = append(args, "-port", port)
+	}
+
+	cmd := exec.Command(parts[0], args...)
+	cmd.Dir = config.WorkDir
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	logDir := filepath.Join(getConfigDir())
+	os.MkdirAll(logDir, 0755)
+	logFile, err := os.OpenFile(filepath.Join(logDir, "opencode.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("  Failed to start OpenCode: %v\n", err)
+		return false
+	}
+
+	fmt.Printf("  OpenCode starting (PID: %d)...\n", cmd.Process.Pid)
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := fmt.Sprintf("http://localhost:%s", port)
+
+	for i := 0; i < 30; i++ {
+		time.Sleep(time.Second)
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			fmt.Println("  ✓ OpenCode started successfully!")
+			return true
+		}
+	}
+
+	fmt.Println("  OpenCode did not start in time.")
+	return false
+}
+
+func waitForOpenCodeManually(port string, client *http.Client) {
+	url := fmt.Sprintf("http://localhost:%s", port)
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
@@ -309,6 +447,28 @@ func waitForOpenCode(port string) {
 			return
 		}
 	}
+}
+
+func loadOpenCodeConfig() (*OpenCodeConfig, error) {
+	path := filepath.Join(getConfigDir(), opencodeFileName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var config OpenCodeConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func saveOpenCodeConfig(config *OpenCodeConfig) error {
+	dir := getConfigDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(config, "", "  ")
+	return os.WriteFile(filepath.Join(dir, opencodeFileName), data, 0600)
 }
 
 func login(relayURL, email, password string) (string, string, error) {
