@@ -22,15 +22,54 @@ var (
 )
 
 type AuthService struct {
-	db        *database.DB
-	jwtSecret []byte
+	db             *database.DB
+	jwtSecret      []byte
+	singleUserMode bool
 }
 
-func NewAuthService(db *database.DB, jwtSecret string) *AuthService {
+func NewAuthService(db *database.DB, jwtSecret string, singleUserMode bool) *AuthService {
 	return &AuthService{
-		db:        db,
-		jwtSecret: []byte(jwtSecret),
+		db:             db,
+		jwtSecret:      []byte(jwtSecret),
+		singleUserMode: singleUserMode,
 	}
+}
+
+func (s *AuthService) IsSingleUserMode() bool {
+	return s.singleUserMode
+}
+
+func (s *AuthService) GetOrCreateSingleUser() (*models.User, error) {
+	if !s.singleUserMode {
+		return nil, errors.New("not in single user mode")
+	}
+
+	email := "admin@localhost"
+	user, err := s.db.GetUserByEmail(email)
+	if err == nil && user != nil {
+		return user, nil
+	}
+
+	hash, _ := bcrypt.GenerateFromPassword([]byte("single-user"), bcrypt.DefaultCost)
+	return s.db.CreateUser(email, string(hash))
+}
+
+func (s *AuthService) AutoLogin() (string, *models.User, error) {
+	if !s.singleUserMode {
+		return "", nil, errors.New("auto login only available in single user mode")
+	}
+
+	user, err := s.GetOrCreateSingleUser()
+	if err != nil {
+		return "", nil, err
+	}
+
+	token, err := s.generateToken(user.ID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return token, user, nil
 }
 
 func (s *AuthService) Register(email, password, code string) (*models.User, error) {

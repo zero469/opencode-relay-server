@@ -30,7 +30,7 @@ func main() {
 		log.Printf("Marked %d device(s) offline on server startup", count)
 	}
 
-	authService := services.NewAuthService(db, cfg.JWTSecret)
+	authService := services.NewAuthService(db, cfg.JWTSecret, cfg.SingleUserMode)
 	deviceService := services.NewDeviceService(db, cfg)
 	emailService := services.NewEmailService(cfg)
 	pairingService := services.NewPairingService(db, cfg)
@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("POST /api/send-verification", authHandler.SendVerification)
 	mux.HandleFunc("POST /api/register", authHandler.Register)
 	mux.HandleFunc("POST /api/login", authHandler.Login)
+	mux.HandleFunc("POST /api/auto-login", authHandler.AutoLogin)
 
 	mux.HandleFunc("GET /api/heartbeat", deviceHandler.Heartbeat)
 

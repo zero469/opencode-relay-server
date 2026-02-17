@@ -107,6 +107,21 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, models.LoginResponse{Token: token, User: *user}, http.StatusOK)
 }
 
+func (h *AuthHandler) AutoLogin(w http.ResponseWriter, r *http.Request) {
+	if !h.authService.IsSingleUserMode() {
+		writeError(w, "auto login not available", http.StatusForbidden)
+		return
+	}
+
+	token, user, err := h.authService.AutoLogin()
+	if err != nil {
+		writeError(w, "auto login failed", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, models.LoginResponse{Token: token, User: *user}, http.StatusOK)
+}
+
 func writeJSON(w http.ResponseWriter, data interface{}, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

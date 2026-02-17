@@ -34,7 +34,7 @@ func TestAuthService_Register(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 
 	tests := []struct {
 		name      string
@@ -107,7 +107,7 @@ func TestAuthService_Login(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
 	auth.Register("test@example.com", "password123", "123456")
@@ -169,7 +169,7 @@ func TestAuthService_ValidateToken(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
 	user, _ := auth.Register("test@example.com", "password123", "123456")

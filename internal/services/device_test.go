@@ -29,7 +29,7 @@ func TestDeviceService_Register(t *testing.T) {
 		Domain:    "test.dpdns.org",
 	}
 
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
@@ -91,7 +91,7 @@ func TestDeviceService_List(t *testing.T) {
 	defer db.Close()
 
 	cfg := &config.Config{}
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "user1@example.com", "111111")
@@ -127,7 +127,7 @@ func TestDeviceService_Get(t *testing.T) {
 	defer db.Close()
 
 	cfg := &config.Config{}
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "user1@example.com", "111111")
@@ -160,7 +160,7 @@ func TestDeviceService_Update(t *testing.T) {
 	defer db.Close()
 
 	cfg := &config.Config{}
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
@@ -186,7 +186,7 @@ func TestDeviceService_Delete(t *testing.T) {
 	defer db.Close()
 
 	cfg := &config.Config{}
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
@@ -209,7 +209,7 @@ func TestDeviceService_Heartbeat(t *testing.T) {
 	defer db.Close()
 
 	cfg := &config.Config{}
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
@@ -242,7 +242,7 @@ func TestDeviceService_GetFrpcConfig(t *testing.T) {
 		Domain:    "test.dpdns.org",
 	}
 
-	auth := services.NewAuthService(db, "test-secret")
+	auth := services.NewAuthService(db, "test-secret", false)
 	deviceSvc := services.NewDeviceService(db, cfg)
 
 	createTestVerificationCode(t, db, "test@example.com", "123456")
