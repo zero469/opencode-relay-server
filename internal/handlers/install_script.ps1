@@ -1,5 +1,5 @@
 #
-# OpenCode Relay Client Setup Script for Windows
+# OpenCode Anywhere Client Setup Script for Windows
 # This script sets up tunnel-client on your Windows PC to enable remote access via OpenCode Anywhere app
 #
 # Usage:
@@ -65,7 +65,7 @@ function Install-TunnelClient {
 function Main {
     Write-Host ""
     Write-ColorOutput "================================================" "Green"
-    Write-ColorOutput "   OpenCode Relay Client Setup (Windows)        " "Green"
+    Write-ColorOutput "   OpenCode Anywhere Client Setup (Windows)     " "Green"
     Write-ColorOutput "================================================" "Green"
     Write-Host ""
     

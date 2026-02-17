@@ -130,7 +130,7 @@ cleanup_old_install() {
 main() {
     echo ""
     echo -e "${GREEN}================================================${NC}"
-    echo -e "${GREEN}   OpenCode Relay Client Setup                  ${NC}"
+    echo -e "${GREEN}   OpenCode Anywhere Client Setup               ${NC}"
     echo -e "${GREEN}================================================${NC}"
     echo ""
     
@@ -162,6 +162,19 @@ main() {
     if [ -f /usr/local/bin/tunnel-client ]; then
         echo -e "You can also use: ${YELLOW}tunnel-client${NC} (added to PATH)"
         echo ""
+    fi
+    
+    # Auto-launch prompt (only if running in interactive TTY)
+    if [ -t 0 ]; then
+        printf "Start tunnel-client now? (Y/n): "
+        read -r answer < /dev/tty
+        case "$answer" in
+            [Nn]*)
+                ;;
+            *)
+                exec "$INSTALL_DIR/tunnel-client"
+                ;;
+        esac
     fi
 }
 
