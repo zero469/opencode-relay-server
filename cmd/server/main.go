@@ -73,6 +73,24 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// Apple App Site Association for iOS password autosave (SharedWebCredentials)
+	mux.HandleFunc("GET /.well-known/apple-app-site-association", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+  "applinks": {
+    "details": [
+      {
+        "appID": "9N465R4RJ8.com.opencode.anywhere",
+        "paths": ["*"]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["9N465R4RJ8.com.opencode.anywhere"]
+  }
+}`))
+	})
+
 	mux.HandleFunc("GET /install.sh", handlers.ServeInstallScript)
 	mux.HandleFunc("GET /install.ps1", handlers.ServeInstallScriptPS1)
 
