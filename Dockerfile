@@ -11,5 +11,9 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=builder /app/opencode-relay-server .
 
+# Persistent data directory - Azure App Service mounts /home as persistent storage
+RUN mkdir -p /home/data
+VOLUME /home/data
+
 EXPOSE 8080
 CMD ["./opencode-relay-server"]

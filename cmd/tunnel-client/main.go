@@ -264,6 +264,7 @@ func runMenu() {
 		runMenu()
 	case "Re-pair Device":
 		cmdPair()
+		cmdStart()
 	case "Logout":
 		cmdLogout()
 		runMenu()

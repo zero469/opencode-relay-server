@@ -74,6 +74,15 @@ jobs:
             --resource-group opencode-relay-rg \
             --web-sockets-enabled true
 
+      - name: Configure persistent storage
+        run: |
+          az webapp config appsettings set \
+            --name opencode-relay \
+            --resource-group opencode-relay-rg \
+            --settings \
+              DATABASE_PATH=/home/data/relay.db \
+              WEBSITES_ENABLE_APP_SERVICE_STORAGE=true
+
       - name: Deploy to Azure Web App
         run: |
           az webapp config container set \
