@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -123,6 +124,9 @@ type TunnelClient struct {
 	sseStopChan  chan struct{}
 	sseWaitGroup sync.WaitGroup
 }
+
+// imageCache stores base64 image URLs by partID for lazy loading
+var imageCache sync.Map
 
 func main() {
 	if len(os.Args) < 2 {
@@ -915,6 +919,12 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 
 func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 	log.Printf("[debug] Received request: %s %s", req.Method, req.Path)
+
+	if strings.HasPrefix(req.Path, "/lazy-image/") {
+		c.handleLazyImage(req)
+		return
+	}
+
 	localURL := fmt.Sprintf("http://localhost:%s%s", c.localPort, req.Path)
 
 	requestBody := req.Body
@@ -948,6 +958,14 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 	if err != nil {
 		c.sendErrorResponse(req.ID, 502, "failed to read response")
 		return
+	}
+
+	originalSize := len(body)
+	start := time.Now()
+	if strippedBody, stripped := stripBase64Images(body, req.Path); stripped {
+		body = strippedBody
+		log.Printf("[debug] Stripped images in %dms, size reduced from %d to %d bytes",
+			time.Since(start).Milliseconds(), originalSize, len(body))
 	}
 
 	responseBody := body
@@ -1013,6 +1031,104 @@ func (c *TunnelClient) sendErrorResponse(reqID string, statusCode int, message s
 	c.writeMu.Lock()
 	c.conn.WriteMessage(websocket.TextMessage, data)
 	c.writeMu.Unlock()
+}
+
+func (c *TunnelClient) handleLazyImage(req *TunnelRequest) {
+	partID := strings.TrimPrefix(req.Path, "/lazy-image/")
+
+	url, ok := imageCache.Load(partID)
+	if !ok {
+		log.Printf("[debug] Image not found in cache for partID: %s", partID)
+		c.sendErrorResponse(req.ID, 404, `{"error": "not found"}`)
+		return
+	}
+
+	log.Printf("[debug] Serving cached image for partID: %s", partID)
+
+	responseJSON, _ := json.Marshal(map[string]string{"url": url.(string)})
+
+	responseBody := responseJSON
+	if c.config.EncryptionKey != "" {
+		encrypted, err := encrypt(responseJSON, c.config.EncryptionKey)
+		if err != nil {
+			c.sendErrorResponse(req.ID, 500, "failed to encrypt response")
+			return
+		}
+		responseBody = encrypted
+	}
+
+	contentType := "application/json"
+	if c.config.EncryptionKey != "" {
+		contentType = "text/plain"
+	}
+
+	tunnelResp := &TunnelResponse{
+		ID:         req.ID,
+		StatusCode: 200,
+		Headers: map[string]string{
+			"Content-Type":   contentType,
+			"Content-Length": fmt.Sprintf("%d", len(responseBody)),
+		},
+		Body: responseBody,
+	}
+
+	data, _ := json.Marshal(tunnelResp)
+	c.writeMu.Lock()
+	err := c.conn.WriteMessage(websocket.TextMessage, data)
+	c.writeMu.Unlock()
+	if err != nil {
+		log.Printf("[debug] Failed to send lazy-image response: %v", err)
+	}
+}
+
+// stripBase64Images strips base64 image data from message list responses
+// and replaces them with lazy:{partID} placeholders for on-demand loading.
+func stripBase64Images(body []byte, path string) ([]byte, bool) {
+	// Only process message list endpoint (with or without query params)
+	matched, _ := regexp.MatchString(`^/session/[^/]+/message(\?.*)?$`, path)
+	if !matched {
+		return body, false
+	}
+
+	// Parse JSON as array of messages
+	var messages []map[string]interface{}
+	if err := json.Unmarshal(body, &messages); err != nil {
+		return body, false // Not valid JSON array, return unchanged
+	}
+
+	modified := false
+	for _, msg := range messages {
+		parts, ok := msg["parts"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, p := range parts {
+			part, ok := p.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if part["type"] == "file" {
+				url, _ := part["url"].(string)
+				if strings.HasPrefix(url, "data:image/") {
+					partID, _ := part["id"].(string)
+					imageCache.Store(partID, url)
+					log.Printf("[debug] Cached image for partID: %s (size: %d)", partID, len(url))
+					part["url"] = "lazy:" + partID
+					modified = true
+				}
+			}
+		}
+	}
+
+	if !modified {
+		return body, false
+	}
+
+	newBody, err := json.Marshal(messages)
+	if err != nil {
+		return body, false
+	}
+	return newBody, true
 }
 
 func getConfigDir() string {
