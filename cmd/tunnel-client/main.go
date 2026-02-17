@@ -513,7 +513,8 @@ func cmdPair() {
 
 func ensureOpenCodeRunning(port string) {
 	client := &http.Client{Timeout: 2 * time.Second}
-	url := fmt.Sprintf("http://localhost:%s", port)
+	// Use 127.0.0.1 instead of localhost to avoid IPv6 timeout issues
+	url := fmt.Sprintf("http://127.0.0.1:%s", port)
 
 	resp, err := client.Get(url)
 	if err == nil {
@@ -625,7 +626,7 @@ func startOpenCode(config *OpenCodeConfig, port string) bool {
 	fmt.Printf("  OpenCode starting (PID: %d)...\n", cmd.Process.Pid)
 
 	client := &http.Client{Timeout: 2 * time.Second}
-	url := fmt.Sprintf("http://localhost:%s", port)
+	url := fmt.Sprintf("http://127.0.0.1:%s", port)
 
 	for i := 0; i < 30; i++ {
 		time.Sleep(time.Second)
@@ -642,7 +643,7 @@ func startOpenCode(config *OpenCodeConfig, port string) bool {
 }
 
 func waitForOpenCodeManually(port string, client *http.Client) {
-	url := fmt.Sprintf("http://localhost:%s", port)
+	url := fmt.Sprintf("http://127.0.0.1:%s", port)
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
@@ -963,7 +964,7 @@ func (c *TunnelClient) buildWebSocketURL() string {
 func (c *TunnelClient) subscribeSSE() {
 	defer c.sseWaitGroup.Done()
 
-	sseURL := fmt.Sprintf("http://localhost:%s/event", c.localPort)
+	sseURL := fmt.Sprintf("http://127.0.0.1:%s/event", c.localPort)
 	log.Printf("[SSE] Subscribing to %s", sseURL)
 
 	for {
@@ -1120,7 +1121,7 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 		return
 	}
 
-	localURL := fmt.Sprintf("http://localhost:%s%s", c.localPort, req.Path)
+	localURL := fmt.Sprintf("http://127.0.0.1:%s%s", c.localPort, req.Path)
 
 	requestBody := req.Body
 	if c.config.EncryptionKey != "" && len(req.Body) > 0 {
