@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gorilla/websocket"
 	"github.com/skip2/go-qrcode"
 	"golang.org/x/term"
@@ -128,9 +130,155 @@ type TunnelClient struct {
 // imageCache stores base64 image URLs by partID for lazy loading
 var imageCache sync.Map
 
+var (
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("212")).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62")).
+			Padding(0, 2)
+
+	selectedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("212")).
+			Bold(true)
+
+	normalStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
+
+	dimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240"))
+)
+
+type menuModel struct {
+	choices  []string
+	cursor   int
+	auth     *AuthConfig
+	device   *DeviceConfig
+	selected string
+	quitting bool
+}
+
+func initialMenu() menuModel {
+	auth, _ := loadAuthConfig()
+	device, _ := loadDeviceConfig()
+
+	var choices []string
+	if auth == nil {
+		choices = []string{"Login", "Exit"}
+	} else if device == nil {
+		choices = []string{"Start Tunnel", "Logout", "Exit"}
+	} else {
+		choices = []string{"Start Tunnel", "Re-pair Device", "Logout", "Exit"}
+	}
+
+	return menuModel{
+		choices: choices,
+		cursor:  0,
+		auth:    auth,
+		device:  device,
+	}
+}
+
+func (m menuModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q", "esc":
+			m.quitting = true
+			return m, tea.Quit
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.choices)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.selected = m.choices[m.cursor]
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m menuModel) View() string {
+	var s strings.Builder
+
+	s.WriteString("\n")
+	s.WriteString(titleStyle.Render("  OpenCode Anywhere"))
+	s.WriteString("\n\n")
+
+	if m.auth != nil {
+		s.WriteString(fmt.Sprintf("  Logged in as: %s\n", m.auth.Email))
+		if m.device != nil {
+			s.WriteString(fmt.Sprintf("  Device: %s ✓\n", m.device.DeviceName))
+		} else {
+			s.WriteString("  Device: Not paired\n")
+		}
+	} else {
+		s.WriteString("  Not logged in\n")
+	}
+	s.WriteString("\n")
+
+	for i, choice := range m.choices {
+		cursor := "  "
+		style := normalStyle
+		if m.cursor == i {
+			cursor = "> "
+			style = selectedStyle
+		}
+		s.WriteString(cursor + style.Render(choice) + "\n")
+	}
+
+	s.WriteString("\n")
+	s.WriteString(dimStyle.Render("  (↑/↓ navigate, Enter select, q quit)"))
+	s.WriteString("\n")
+
+	return s.String()
+}
+
+func runMenu() {
+	m := initialMenu()
+	p := tea.NewProgram(m)
+
+	finalModel, err := p.Run()
+	if err != nil {
+		log.Fatalf("Error running menu: %v", err)
+	}
+
+	result := finalModel.(menuModel)
+	if result.quitting {
+		return
+	}
+
+	switch result.selected {
+	case "Start Tunnel":
+		cmdStart()
+	case "Login":
+		doLogin(defaultRelay)
+		runMenu()
+	case "Re-pair Device":
+		cmdPair()
+	case "Logout":
+		cmdLogout()
+		runMenu()
+	case "Exit":
+		return
+	}
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		cmdStart()
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			runMenu()
+		} else {
+			cmdStart()
+		}
 		return
 	}
 
@@ -141,6 +289,8 @@ func main() {
 		cmdStatus()
 	case "logout":
 		cmdLogout()
+	case "pair":
+		cmdPair()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -151,13 +301,14 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`OpenCode Tunnel Client
+	fmt.Println(`OpenCode Anywhere
 
 Usage:
   tunnel-client [command] [options]
 
 Commands:
   start     Start the tunnel (default, can be omitted)
+  pair      Re-pair device (regenerate QR, keep login)
   status    Show current status
   logout    Logout and clear credentials
 
@@ -168,7 +319,7 @@ Options:
 
 func doLogin(relay string) *AuthConfig {
 	fmt.Println("\n┌─────────────────────────────────────────────┐")
-	fmt.Println("│  Login to OpenCode Relay                    │")
+	fmt.Println("│  Login to OpenCode Anywhere                 │")
 	fmt.Println("└─────────────────────────────────────────────┘")
 	fmt.Println()
 
@@ -314,6 +465,50 @@ func cmdLogout() {
 	os.Remove(devicePath)
 
 	fmt.Println("✓ Logged out")
+}
+
+func cmdPair() {
+	relay := defaultRelay
+	localPort := defaultPort
+
+	for i := 1; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "-port":
+			if i+1 < len(os.Args) {
+				localPort = os.Args[i+1]
+				i++
+			}
+		case "-relay":
+			if i+1 < len(os.Args) {
+				relay = os.Args[i+1]
+				i++
+			}
+		}
+	}
+
+	auth, err := loadAuthConfig()
+	if err != nil {
+		auth = doLogin(relay)
+	}
+
+	if relay == defaultRelay && auth.RelayURL != "" {
+		relay = auth.RelayURL
+	}
+
+	clearDeviceConfig()
+
+	device, err := startPairing(relay, auth.Token, localPort)
+	if err != nil {
+		log.Fatalf("Pairing failed: %v", err)
+	}
+
+	device.RelayURL = relay
+	if err := saveDeviceConfig(device); err != nil {
+		log.Fatalf("Failed to save device config: %v", err)
+	}
+
+	fmt.Printf("\n✓ Device \"%s\" paired successfully!\n", device.DeviceName)
+	setupAutoStart(localPort)
 }
 
 func ensureOpenCodeRunning(port string) {
@@ -1278,7 +1473,7 @@ func setupSystemd(localPort string) error {
 	servicePath := filepath.Join(systemdDir, "opencode-relay.service")
 
 	serviceContent := fmt.Sprintf(`[Unit]
-Description=OpenCode Relay Tunnel
+Description=OpenCode Anywhere Tunnel
 After=network.target
 
 [Service]
