@@ -48,8 +48,8 @@ type AuthConfig struct {
 }
 
 type DeviceConfig struct {
-	DeviceID      int64  `json:"device_id"`
-	DeviceName    string `json:"device_name"`
+	DeviceID      int64  `json:"id"`
+	DeviceName    string `json:"name"`
 	RelayURL      string `json:"relay_url"`
 	Subdomain     string `json:"subdomain"`
 	AuthUser      string `json:"auth_user"`
