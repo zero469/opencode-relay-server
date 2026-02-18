@@ -108,6 +108,11 @@ type TunnelResponse struct {
 	Body       []byte            `json:"body"`
 }
 
+type HeartbeatMessage struct {
+	Type string `json:"type"`
+	Ts   int64  `json:"ts"`
+}
+
 type SSEEvent struct {
 	Type       string          `json:"type"`
 	Properties json.RawMessage `json:"properties"`
@@ -979,6 +984,26 @@ func (c *TunnelClient) connect() error {
 				log.Printf("[WebSocket] Read error: %v", err)
 			}
 			return fmt.Errorf("read error: %w", err)
+		}
+
+		var heartbeat HeartbeatMessage
+		if err := json.Unmarshal(message, &heartbeat); err == nil && heartbeat.Type == "heartbeat" {
+			debugLog("[heartbeat] Received heartbeat ts=%d", heartbeat.Ts)
+			ack := HeartbeatMessage{
+				Type: "heartbeat_ack",
+				Ts:   heartbeat.Ts,
+			}
+			ackData, _ := json.Marshal(ack)
+			c.writeMu.Lock()
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			err := conn.WriteMessage(websocket.TextMessage, ackData)
+			c.writeMu.Unlock()
+			if err != nil {
+				log.Printf("[heartbeat] Failed to send heartbeat_ack: %v", err)
+			} else {
+				debugLog("[heartbeat] Sent heartbeat_ack ts=%d", heartbeat.Ts)
+			}
+			continue
 		}
 
 		var req TunnelRequest

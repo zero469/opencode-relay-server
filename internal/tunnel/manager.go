@@ -37,6 +37,11 @@ type TunnelEvent struct {
 	Data  string `json:"data"`
 }
 
+type HeartbeatMessage struct {
+	Type string `json:"type"` // "heartbeat" or "heartbeat_ack"
+	Ts   int64  `json:"ts"`   // Unix milliseconds
+}
+
 type TunnelConnection struct {
 	conn      *websocket.Conn
 	subdomain string
@@ -246,6 +251,11 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 			continue
 		}
 
+		var heartbeatAck HeartbeatMessage
+		if err := json.Unmarshal(message, &heartbeatAck); err == nil && heartbeatAck.Type == "heartbeat_ack" {
+			continue
+		}
+
 		var tunnelEvent TunnelEvent
 		if err := json.Unmarshal(message, &tunnelEvent); err == nil && tunnelEvent.Event == "sse" {
 			m.broadcastEvent(tc.subdomain, message)
@@ -289,11 +299,22 @@ func (tc *TunnelConnection) pingLoop(m *Manager) {
 	for {
 		select {
 		case <-ticker.C:
+			heartbeat := HeartbeatMessage{
+				Type: "heartbeat",
+				Ts:   time.Now().UnixMilli(),
+			}
+			data, err := json.Marshal(heartbeat)
+			if err != nil {
+				log.Printf("[tunnel] Failed to marshal heartbeat: %v", err)
+				return
+			}
+
 			tc.writeMu.Lock()
 			tc.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			err := tc.conn.WriteMessage(websocket.PingMessage, nil)
+			err = tc.conn.WriteMessage(websocket.TextMessage, data)
 			tc.writeMu.Unlock()
 			if err != nil {
+				log.Printf("[tunnel] Failed to send heartbeat to %s: %v", tc.subdomain, err)
 				return
 			}
 			if m.onHeartbeat != nil {
