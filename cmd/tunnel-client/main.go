@@ -130,6 +130,35 @@ type TunnelClient struct {
 // imageCache stores base64 image URLs by partID for lazy loading
 var imageCache sync.Map
 
+// debugLogger writes debug/info logs to file only
+var debugLogger *log.Logger
+var debugLogFile *os.File
+
+func initDebugLogger() {
+	dir := getConfigDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+	logPath := filepath.Join(dir, "tunnel.log")
+
+	if info, err := os.Stat(logPath); err == nil && info.Size() > 10*1024*1024 {
+		os.Remove(logPath)
+	}
+
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	debugLogFile = file
+	debugLogger = log.New(file, "", log.LstdFlags)
+}
+
+func debugLog(format string, v ...interface{}) {
+	if debugLogger != nil {
+		debugLogger.Printf(format, v...)
+	}
+}
+
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -274,6 +303,7 @@ func runMenu() {
 }
 
 func main() {
+	initDebugLogger()
 	if len(os.Args) < 2 {
 		if term.IsTerminal(int(os.Stdin.Fd())) {
 			runMenu()
@@ -958,7 +988,7 @@ func (c *TunnelClient) buildWebSocketURL() string {
 	q.Set("auth_password", c.config.AuthPassword)
 	u.RawQuery = q.Encode()
 
-	log.Printf("[debug] WebSocket URL: %s (subdomain: %s)", u.String(), c.config.Subdomain)
+	debugLog("[debug] WebSocket URL: %s (subdomain: %s)", u.String(), c.config.Subdomain)
 	return u.String()
 }
 
@@ -966,19 +996,19 @@ func (c *TunnelClient) subscribeSSE() {
 	defer c.sseWaitGroup.Done()
 
 	sseURL := fmt.Sprintf("http://127.0.0.1:%s/event", c.localPort)
-	log.Printf("[SSE] Subscribing to %s", sseURL)
+	debugLog("[SSE] Subscribing to %s", sseURL)
 
 	for {
 		select {
 		case <-c.sseStopChan:
-			log.Printf("[SSE] Stopping subscription")
+			debugLog("[SSE] Stopping subscription")
 			return
 		default:
 		}
 
 		err := c.connectSSE(sseURL)
 		if err != nil {
-			log.Printf("[SSE] Connection error: %v, reconnecting in 3s...", err)
+			debugLog("[SSE] Connection error: %v, reconnecting in 3s...", err)
 			select {
 			case <-c.sseStopChan:
 				return
@@ -1007,7 +1037,7 @@ func (c *TunnelClient) connectSSE(sseURL string) error {
 		return fmt.Errorf("SSE returned status %d", resp.StatusCode)
 	}
 
-	log.Printf("[SSE] Connected to OpenCode events")
+	debugLog("[SSE] Connected to OpenCode events")
 
 	reader := resp.Body
 	buf := make([]byte, 0, 4096)
@@ -1063,7 +1093,7 @@ func (c *TunnelClient) processSSEEvent(eventData []byte) {
 		Payload json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		log.Printf("[SSE] Failed to parse event: %v", err)
+		debugLog("[SSE] Failed to parse event: %v", err)
 		return
 	}
 
@@ -1074,11 +1104,11 @@ func (c *TunnelClient) processSSEEvent(eventData []byte) {
 
 	var event SSEEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
-		log.Printf("[SSE] Failed to parse payload: %v", err)
+		debugLog("[SSE] Failed to parse payload: %v", err)
 		return
 	}
 
-	log.Printf("[SSE] Event: %s", event.Type)
+	debugLog("[SSE] Event: %s", event.Type)
 
 	c.sendEvent(&event)
 }
@@ -1086,7 +1116,7 @@ func (c *TunnelClient) processSSEEvent(eventData []byte) {
 func (c *TunnelClient) sendEvent(event *SSEEvent) {
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[SSE] Failed to marshal event: %v", err)
+		debugLog("[SSE] Failed to marshal event: %v", err)
 		return
 	}
 
@@ -1096,7 +1126,7 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 	if c.config.EncryptionKey != "" {
 		encrypted, err := encrypt(eventJSON, c.config.EncryptionKey)
 		if err != nil {
-			log.Printf("[SSE] Failed to encrypt event: %v", err)
+			debugLog("[SSE] Failed to encrypt event: %v", err)
 			return
 		}
 		tunnelEvent.Data = string(encrypted)
@@ -1110,12 +1140,12 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 	c.writeMu.Unlock()
 
 	if err != nil {
-		log.Printf("[SSE] Failed to send event: %v", err)
+		debugLog("[SSE] Failed to send event: %v", err)
 	}
 }
 
 func (c *TunnelClient) handleRequest(req *TunnelRequest) {
-	log.Printf("[debug] Received request: %s %s", req.Method, req.Path)
+	debugLog("[debug] Received request: %s %s", req.Method, req.Path)
 
 	if strings.HasPrefix(req.Path, "/lazy-image/") {
 		c.handleLazyImage(req)
@@ -1161,7 +1191,7 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 	start := time.Now()
 	if strippedBody, stripped := stripBase64Images(body, req.Path); stripped {
 		body = strippedBody
-		log.Printf("[debug] Stripped images in %dms, size reduced from %d to %d bytes",
+		debugLog("[debug] Stripped images in %dms, size reduced from %d to %d bytes",
 			time.Since(start).Milliseconds(), originalSize, len(body))
 	}
 
@@ -1199,9 +1229,9 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 	err = c.conn.WriteMessage(websocket.TextMessage, data)
 	c.writeMu.Unlock()
 	if err != nil {
-		log.Printf("[debug] Failed to send response: %v", err)
+		debugLog("[debug] Failed to send response: %v", err)
 	} else {
-		log.Printf("[debug] Sent response: status=%d, bodyLen=%d", resp.StatusCode, len(responseBody))
+		debugLog("[debug] Sent response: status=%d, bodyLen=%d", resp.StatusCode, len(responseBody))
 	}
 }
 
@@ -1235,12 +1265,12 @@ func (c *TunnelClient) handleLazyImage(req *TunnelRequest) {
 
 	url, ok := imageCache.Load(partID)
 	if !ok {
-		log.Printf("[debug] Image not found in cache for partID: %s", partID)
+		debugLog("[debug] Image not found in cache for partID: %s", partID)
 		c.sendErrorResponse(req.ID, 404, `{"error": "not found"}`)
 		return
 	}
 
-	log.Printf("[debug] Serving cached image for partID: %s", partID)
+	debugLog("[debug] Serving cached image for partID: %s", partID)
 
 	responseJSON, _ := json.Marshal(map[string]string{"url": url.(string)})
 
@@ -1274,7 +1304,7 @@ func (c *TunnelClient) handleLazyImage(req *TunnelRequest) {
 	err := c.conn.WriteMessage(websocket.TextMessage, data)
 	c.writeMu.Unlock()
 	if err != nil {
-		log.Printf("[debug] Failed to send lazy-image response: %v", err)
+		debugLog("[debug] Failed to send lazy-image response: %v", err)
 	}
 }
 
@@ -1309,7 +1339,7 @@ func stripBase64Images(body []byte, path string) ([]byte, bool) {
 				if strings.HasPrefix(url, "data:image/") {
 					partID, _ := part["id"].(string)
 					imageCache.Store(partID, url)
-					log.Printf("[debug] Cached image for partID: %s (size: %d)", partID, len(url))
+					debugLog("[debug] Cached image for partID: %s (size: %d)", partID, len(url))
 					part["url"] = "lazy:" + partID
 					modified = true
 				}
