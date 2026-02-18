@@ -234,6 +234,8 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 	for {
 		_, message, err := tc.conn.ReadMessage()
 		if err != nil {
+			// ALWAYS log the error for debugging
+			log.Printf("[tunnel] readLoop exit for %s: %v", tc.subdomain, err)
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("[tunnel] Read error for %s: %v", tc.subdomain, err)
 			}
@@ -281,7 +283,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 }
 
 func (tc *TunnelConnection) pingLoop(m *Manager) {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -424,7 +426,7 @@ func (ec *EventClient) readLoop(m *Manager) {
 }
 
 func (ec *EventClient) pingLoop() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {

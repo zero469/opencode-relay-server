@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -917,6 +918,9 @@ func (c *TunnelClient) connect() error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout:  10 * time.Second,
 		EnableCompression: false,
+		TLSClientConfig: &tls.Config{
+			NextProtos: []string{"http/1.1"}, // Force HTTP/1.1, avoid HTTP/2 (Azure ALPN issue)
+		},
 	}
 	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
