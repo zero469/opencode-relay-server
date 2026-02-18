@@ -74,6 +74,13 @@ jobs:
             --resource-group opencode-relay-rg \
             --web-sockets-enabled true
 
+      - name: Disable ARR Affinity (required for WebSocket stability)
+        run: |
+          az webapp update \
+            --name opencode-relay \
+            --resource-group opencode-relay-rg \
+            --client-affinity-enabled false
+
       - name: Configure persistent storage
         run: |
           az webapp config appsettings set \

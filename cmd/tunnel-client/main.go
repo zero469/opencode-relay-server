@@ -927,7 +927,11 @@ func (c *TunnelClient) connect() error {
 
 	fmt.Printf("✓ Connected! Tunneling to localhost:%s\n", c.localPort)
 
-	conn.SetPongHandler(func(string) error { return nil })
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 
 	c.sseStopChan = make(chan struct{})
 	c.sseWaitGroup.Add(1)
@@ -941,7 +945,7 @@ func (c *TunnelClient) connect() error {
 	}()
 
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -959,6 +963,7 @@ func (c *TunnelClient) connect() error {
 	}()
 
 	for {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			// Log the specific error type for debugging

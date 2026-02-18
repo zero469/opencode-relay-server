@@ -263,7 +263,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 }
 
 func (tc *TunnelConnection) pingLoop(m *Manager) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -391,7 +391,7 @@ func (ec *EventClient) readLoop(m *Manager) {
 }
 
 func (ec *EventClient) pingLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
