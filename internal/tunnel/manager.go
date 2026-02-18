@@ -247,6 +247,9 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 			return
 		}
 
+		// Reset read deadline on every successful read to prevent timeout
+		tc.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
 		if len(message) == 0 {
 			continue
 		}
@@ -443,6 +446,9 @@ func (ec *EventClient) readLoop(m *Manager) {
 			}
 			return
 		}
+
+		// Reset read deadline on every successful read to prevent timeout
+		ec.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	}
 }
 
