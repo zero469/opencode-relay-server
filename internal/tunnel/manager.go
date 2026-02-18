@@ -100,6 +100,14 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 		return nil
 	})
 
+	// Set ping handler to extend read deadline when ping received from client
+	conn.SetPingHandler(func(appData string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// Write pong with appData (gorilla requires manual pong when using custom PingHandler)
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
+	})
+
 	tc := &TunnelConnection{
 		conn:      conn,
 		subdomain: subdomain,
@@ -324,6 +332,14 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
+	})
+
+	// Set ping handler to extend read deadline when ping received from client
+	conn.SetPingHandler(func(appData string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// Write pong with appData (gorilla requires manual pong when using custom PingHandler)
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
 	})
 
 	client := &EventClient{
