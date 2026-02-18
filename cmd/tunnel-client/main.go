@@ -961,6 +961,14 @@ func (c *TunnelClient) connect() error {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
+			// Log the specific error type for debugging
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("[WebSocket] Connection closed normally: %v", err)
+			} else if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("[WebSocket] Unexpected close: %v", err)
+			} else {
+				log.Printf("[WebSocket] Read error: %v", err)
+			}
 			return fmt.Errorf("read error: %w", err)
 		}
 

@@ -115,6 +115,10 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 	go tc.readLoop(m)
 	go tc.pingLoop(m)
 
+	// Block until connection closes to keep HTTP handler alive
+	// (required for Azure App Service and similar environments)
+	<-tc.closeChan
+
 	return nil
 }
 
@@ -323,6 +327,9 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 
 	go client.readLoop(m)
 	go client.pingLoop()
+
+	// Block until connection closes to keep HTTP handler alive
+	<-client.closeChan
 
 	return nil
 }
