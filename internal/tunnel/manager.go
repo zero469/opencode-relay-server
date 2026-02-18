@@ -91,6 +91,15 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 		return err
 	}
 
+	// Set initial read deadline for Azure compatibility
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+	// Set pong handler to extend read deadline when pong received
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	tc := &TunnelConnection{
 		conn:      conn,
 		subdomain: subdomain,
@@ -184,6 +193,7 @@ func (tc *TunnelConnection) SendRequest(req *TunnelRequest) (*TunnelResponse, er
 	log.Printf("[debug] Sending request to tunnel-client: %d bytes", len(data))
 
 	tc.writeMu.Lock()
+	tc.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	err = tc.conn.WriteMessage(websocket.TextMessage, data)
 	tc.writeMu.Unlock()
 
@@ -270,6 +280,7 @@ func (tc *TunnelConnection) pingLoop(m *Manager) {
 		select {
 		case <-ticker.C:
 			tc.writeMu.Lock()
+			tc.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			err := tc.conn.WriteMessage(websocket.PingMessage, nil)
 			tc.writeMu.Unlock()
 			if err != nil {
@@ -308,6 +319,12 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 	if err != nil {
 		return err
 	}
+
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 
 	client := &EventClient{
 		conn:      conn,
@@ -398,6 +415,7 @@ func (ec *EventClient) pingLoop() {
 		select {
 		case <-ticker.C:
 			ec.writeMu.Lock()
+			ec.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			err := ec.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
 			ec.writeMu.Unlock()
 			if err != nil {
