@@ -15,6 +15,7 @@ import (
 
 func main() {
 	cfg := config.Load()
+	log.Printf("Database path: %s", cfg.DatabasePath)
 
 	db, err := database.New(cfg.DatabasePath)
 	if err != nil {
