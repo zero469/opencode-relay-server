@@ -34,20 +34,28 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	}
 
 	html := fmt.Sprintf(`
-		<div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
-			<h2 style="color: #333;">Verify your email</h2>
-			<p>Your verification code is:</p>
-			<div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 8px; font-weight: bold; margin: 20px 0;">
-				%s
-			</div>
-			<p style="color: #666; font-size: 14px;">This code expires in 10 minutes.</p>
-		</div>
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
+	<h2 style="color: #333;">OpenCode Anywhere</h2>
+	<p>Hello,</p>
+	<p>Your verification code for OpenCode Anywhere is:</p>
+	<div style="background: #f0f0f0; padding: 15px; text-align: center; font-size: 24px; letter-spacing: 4px; font-weight: bold; margin: 15px 0; border-radius: 5px;">
+		%s
+	</div>
+	<p style="color: #666; font-size: 13px;">This code will expire in 10 minutes. If you did not request this code, please ignore this email.</p>
+	<p style="color: #999; font-size: 12px; margin-top: 20px;">OpenCode Anywhere - Remote access for your development environment</p>
+</div>
+</body>
+</html>
 	`, code)
 
 	reqBody := resendRequest{
 		From:    s.emailFrom,
 		To:      []string{to},
-		Subject: "Your verification code",
+		Subject: "OpenCode Anywhere - Verification Code",
 		Html:    html,
 	}
 

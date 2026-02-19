@@ -39,7 +39,7 @@ const (
 	authFileName     = "auth.json"
 	deviceFileName   = "device.json"
 	opencodeFileName = "opencode.json"
-	defaultRelay     = "https://opencode-relay.victoriouswater-fc24e366.eastasia.azurecontainerapps.io"
+	defaultRelay     = "https://opencode-relay.azurewebsites.net"
 	defaultPort      = "4096"
 	pairingInterval  = 2 * time.Second
 )
