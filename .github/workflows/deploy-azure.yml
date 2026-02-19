@@ -67,35 +67,9 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Enable WebSockets
+      - name: Deploy to Azure Container Apps
         run: |
-          az webapp config set \
+          az containerapp update \
             --name opencode-relay \
             --resource-group opencode-relay-rg \
-            --web-sockets-enabled true
-
-      - name: Disable ARR Affinity (required for WebSocket stability)
-        run: |
-          az webapp update \
-            --name opencode-relay \
-            --resource-group opencode-relay-rg \
-            --client-affinity-enabled false
-
-      - name: Configure persistent storage
-        run: |
-          az webapp config appsettings set \
-            --name opencode-relay \
-            --resource-group opencode-relay-rg \
-            --settings \
-              DATABASE_PATH=/home/data/relay.db \
-              WEBSITES_ENABLE_APP_SERVICE_STORAGE=true
-
-      - name: Deploy to Azure Web App
-        run: |
-          az webapp config container set \
-            --name opencode-relay \
-            --resource-group opencode-relay-rg \
-            --container-image-name ghcr.io/${{ github.repository }}:latest
-          az webapp restart \
-            --name opencode-relay \
-            --resource-group opencode-relay-rg
+            --image ghcr.io/zero469/opencode-relay-server:latest
