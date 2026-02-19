@@ -3,6 +3,11 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zero469/opencode-relay-server/internal/config"
@@ -15,9 +20,32 @@ import (
 
 func main() {
 	cfg := config.Load()
-	log.Printf("Database path: %s", cfg.DatabasePath)
 
-	db, err := database.New(cfg.DatabasePath)
+	localPath := cfg.DatabasePath
+	remotePath := ""
+
+	// If DATABASE_PATH points to Azure Files mount, use local disk for SQLite
+	if strings.HasPrefix(cfg.DatabasePath, "/data/") {
+		if _, err := os.Stat(filepath.Dir(cfg.DatabasePath)); err == nil {
+			remotePath = cfg.DatabasePath
+			localPath = "/tmp/" + filepath.Base(cfg.DatabasePath)
+
+			if _, err := os.Stat(remotePath); err == nil {
+				log.Printf("Copying database from %s to %s", remotePath, localPath)
+				if err := copyFile(remotePath, localPath); err != nil {
+					log.Printf("Warning: failed to copy database from remote: %v", err)
+				} else {
+					log.Printf("Database copied successfully")
+				}
+			} else {
+				log.Printf("No remote database found at %s, starting fresh", remotePath)
+			}
+		}
+	}
+
+	log.Printf("Database path: %s (remote: %s)", localPath, remotePath)
+
+	db, err := database.New(localPath)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -104,6 +132,35 @@ func main() {
 		}
 	}()
 
+	stopSync := make(chan struct{})
+	if remotePath != "" {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					syncDatabase(localPath, remotePath)
+				case <-stopSync:
+					return
+				}
+			}
+		}()
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal %v, shutting down...", sig)
+		close(stopSync)
+		if remotePath != "" {
+			syncDatabase(localPath, remotePath)
+		}
+		db.Close()
+		os.Exit(0)
+	}()
+
 	handler := corsMiddleware(mux)
 
 	log.Printf("Server starting on :%s", cfg.Port)
@@ -125,4 +182,21 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func syncDatabase(localPath, remotePath string) {
+	start := time.Now()
+	if err := copyFile(localPath, remotePath); err != nil {
+		log.Printf("[sync] Failed to sync database to %s: %v", remotePath, err)
+	} else {
+		log.Printf("[sync] Database synced to %s (%v)", remotePath, time.Since(start))
+	}
+}
+
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,8 +19,8 @@ func New(path string) (*DB, error) {
 	if path == ":memory:" {
 		// In-memory database for tests - no pragmas needed
 		dsn = path
-	} else {
-		// File-based database - create directory and use SMB-compatible pragmas
+	} else if strings.HasPrefix(path, "/data/") {
+		// Azure Files SMB mount - use DELETE journal mode for compatibility
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, err
@@ -29,6 +30,14 @@ func New(path string) (*DB, error) {
 		// - journal_mode=DELETE: rollback journal (WAL requires shared memory which SMB doesn't support)
 		// - _txlock=immediate: acquire locks immediately to prevent deadlocks
 		dsn = "file:" + path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(DELETE)&_txlock=immediate"
+	} else {
+		// Local disk - use WAL journal mode for better performance
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, err
+		}
+		// WAL mode provides better concurrency and performance on local disk
+		dsn = "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	}
 
 	db, err := sql.Open("sqlite", dsn)
