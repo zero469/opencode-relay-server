@@ -91,7 +91,12 @@ func (m *Manager) SetCallbacks(onHeartbeat, onDisconnect func(subdomain string))
 }
 
 func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdomain string) error {
-	conn, err := m.upgrader.Upgrade(w, r, nil)
+	// Response headers to signal reverse proxies (including Azure's) not to buffer
+	responseHeader := http.Header{
+		"X-Accel-Buffering": []string{"no"},
+		"Cache-Control":     []string{"no-cache, no-store, must-revalidate"},
+	}
+	conn, err := m.upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		return err
 	}
@@ -137,10 +142,8 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 	go tc.readLoop(m)
 	go tc.pingLoop(m)
 
-	// Block until connection closes to keep HTTP handler alive
-	// (required for Azure App Service and similar environments)
-	<-tc.closeChan
-
+	// After Upgrade, gorilla owns the TCP socket — returning immediately is correct.
+	// Blocking here causes Azure's reverse proxy to kill the connection as "stalled."
 	return nil
 }
 
@@ -349,7 +352,12 @@ func GenerateRequestID() string {
 }
 
 func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, subdomain string) error {
-	conn, err := m.upgrader.Upgrade(w, r, nil)
+	// Response headers to signal reverse proxies (including Azure's) not to buffer
+	responseHeader := http.Header{
+		"X-Accel-Buffering": []string{"no"},
+		"Cache-Control":     []string{"no-cache, no-store, must-revalidate"},
+	}
+	conn, err := m.upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		return err
 	}
@@ -387,9 +395,8 @@ func (m *Manager) HandleEventWebSocket(w http.ResponseWriter, r *http.Request, s
 	go client.readLoop(m)
 	go client.pingLoop()
 
-	// Block until connection closes to keep HTTP handler alive
-	<-client.closeChan
-
+	// After Upgrade, gorilla owns the TCP socket — returning immediately is correct.
+	// Blocking here causes Azure's reverse proxy to kill the connection as "stalled."
 	return nil
 }
 
