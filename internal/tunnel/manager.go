@@ -131,7 +131,7 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request, subdom
 	log.Printf("[tunnel] Client connected: %s", subdomain)
 
 	if m.onHeartbeat != nil {
-		m.onHeartbeat(subdomain)
+		go m.onHeartbeat(subdomain)
 	}
 
 	go tc.readLoop(m)
@@ -294,7 +294,7 @@ func (tc *TunnelConnection) readLoop(m *Manager) {
 }
 
 func (tc *TunnelConnection) pingLoop(m *Manager) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -319,7 +319,7 @@ func (tc *TunnelConnection) pingLoop(m *Manager) {
 				return
 			}
 			if m.onHeartbeat != nil {
-				m.onHeartbeat(tc.subdomain)
+				go m.onHeartbeat(tc.subdomain)
 			}
 		case <-tc.closeChan:
 			return
@@ -450,7 +450,7 @@ func (ec *EventClient) readLoop(m *Manager) {
 }
 
 func (ec *EventClient) pingLoop() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {

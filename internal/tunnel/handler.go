@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/zero469/opencode-relay-server/internal/database"
 )
@@ -16,6 +17,7 @@ type Handler struct {
 func NewHandler(manager *Manager, db *database.DB) *Handler {
 	manager.SetCallbacks(
 		func(subdomain string) {
+			start := time.Now()
 			device, err := db.GetDeviceBySubdomain(subdomain)
 			if err != nil {
 				log.Printf("[tunnel] heartbeat: GetDeviceBySubdomain failed for %s: %v", subdomain, err)
@@ -23,6 +25,9 @@ func NewHandler(manager *Manager, db *database.DB) *Handler {
 			}
 			if err := db.UpdateDeviceHeartbeat(device.ID); err != nil {
 				log.Printf("[tunnel] heartbeat: UpdateDeviceHeartbeat failed for %s (id=%d): %v", subdomain, device.ID, err)
+			}
+			if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+				log.Printf("[tunnel] heartbeat: slow DB for %s: %v", subdomain, elapsed)
 			}
 		},
 		func(subdomain string) {
