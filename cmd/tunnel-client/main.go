@@ -1178,13 +1178,11 @@ func (c *TunnelClient) sendEvent(event *SSEEvent) {
 
 	data, _ := json.Marshal(tunnelEvent)
 	c.writeMu.Lock()
-	c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err = c.conn.WriteMessage(websocket.TextMessage, data)
-	c.conn.SetWriteDeadline(time.Time{}) // Clear deadline after write
 	c.writeMu.Unlock()
 
 	if err != nil {
-		debugLog("[SSE] Failed to send event (skipping): %v", err)
+		debugLog("[SSE] Failed to send event: %v", err)
 	}
 }
 
@@ -1270,9 +1268,7 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 
 	data, _ := json.Marshal(tunnelResp)
 	c.writeMu.Lock()
-	c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err = c.conn.WriteMessage(websocket.TextMessage, data)
-	c.conn.SetWriteDeadline(time.Time{})
 	c.writeMu.Unlock()
 	if err != nil {
 		debugLog("[debug] Failed to send response: %v", err)
@@ -1302,9 +1298,7 @@ func (c *TunnelClient) sendErrorResponse(reqID string, statusCode int, message s
 
 	data, _ := json.Marshal(resp)
 	c.writeMu.Lock()
-	c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	c.conn.WriteMessage(websocket.TextMessage, data)
-	c.conn.SetWriteDeadline(time.Time{})
 	c.writeMu.Unlock()
 }
 
@@ -1349,9 +1343,7 @@ func (c *TunnelClient) handleLazyImage(req *TunnelRequest) {
 
 	data, _ := json.Marshal(tunnelResp)
 	c.writeMu.Lock()
-	c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := c.conn.WriteMessage(websocket.TextMessage, data)
-	c.conn.SetWriteDeadline(time.Time{})
 	c.writeMu.Unlock()
 	if err != nil {
 		debugLog("[debug] Failed to send lazy-image response: %v", err)
