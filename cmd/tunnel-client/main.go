@@ -37,7 +37,7 @@ const (
 	authFileName     = "auth.json"
 	deviceFileName   = "device.json"
 	opencodeFileName = "opencode.json"
-	defaultRelay     = "https://opencode-relay.azurewebsites.net"
+	defaultRelay     = "https://opencode-relay.victoriouswater-fc24e366.eastasia.azurecontainerapps.io"
 	defaultPort      = "4096"
 	pairingInterval  = 2 * time.Second
 )
@@ -351,7 +351,7 @@ Commands:
 
 Options:
   -port <port>   Local OpenCode port (default: 4096)
-  -relay <url>   Relay server URL (default: https://opencode-relay.azurewebsites.net)`)
+  -relay <url>   Relay server URL (default: https://opencode-relay.victoriouswater-fc24e366.eastasia.azurecontainerapps.io)`)
 }
 
 func doLogin(relay string) *AuthConfig {
