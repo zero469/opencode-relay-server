@@ -13,15 +13,31 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
+	var dsn string
+
+	if path == ":memory:" {
+		// In-memory database for tests - no pragmas needed
+		dsn = path
+	} else {
+		// File-based database - create directory and use SMB-compatible pragmas
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, err
+		}
+		// Use URI format with pragmas for SMB/Azure Files compatibility:
+		// - busy_timeout: wait up to 10s when database is locked
+		// - journal_mode=DELETE: rollback journal (WAL requires shared memory which SMB doesn't support)
+		// - _txlock=immediate: acquire locks immediately to prevent deadlocks
+		dsn = "file:" + path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(DELETE)&_txlock=immediate"
 	}
 
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
+
+	// Limit to single connection - critical for SQLite on network file systems
+	db.SetMaxOpenConns(1)
 
 	if err := db.Ping(); err != nil {
 		return nil, err
