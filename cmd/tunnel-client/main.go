@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -136,6 +138,22 @@ type TunnelClient struct {
 // imageCache stores base64 image URLs by partID for lazy loading
 var imageCache sync.Map
 
+// dnsCache stores resolved IPs from DNS-over-HTTPS for the process lifetime
+var dnsCache sync.Map
+
+// DoH response structures for Cloudflare DNS-over-HTTPS JSON API
+type dohResponse struct {
+	Status int         `json:"Status"`
+	Answer []dohAnswer `json:"Answer"`
+}
+
+type dohAnswer struct {
+	Name string `json:"name"`
+	Type int    `json:"type"`
+	TTL  int    `json:"TTL"`
+	Data string `json:"data"`
+}
+
 // debugLogger writes debug/info logs to file only
 var debugLogger *log.Logger
 var debugLogFile *os.File
@@ -162,6 +180,91 @@ func initDebugLogger() {
 func debugLog(format string, v ...interface{}) {
 	if debugLogger != nil {
 		debugLogger.Printf(format, v...)
+	}
+}
+
+func resolveViaDoH(hostname string) (string, error) {
+	if cached, ok := dnsCache.Load(hostname); ok {
+		return cached.(string), nil
+	}
+
+	dohTransport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, "1.1.1.1:443")
+		},
+	}
+	dohClient := &http.Client{Timeout: 5 * time.Second, Transport: dohTransport}
+
+	dohURL := fmt.Sprintf("https://1.1.1.1/dns-query?name=%s&type=A", url.QueryEscape(hostname))
+	req, err := http.NewRequest("GET", dohURL, nil)
+	if err != nil {
+		debugLog("[DNS] DoH request creation failed for %s: %v, falling back to system DNS", hostname, err)
+		return resolveViaSystemDNS(hostname)
+	}
+	req.Header.Set("Accept", "application/dns-json")
+
+	resp, err := dohClient.Do(req)
+	if err != nil {
+		debugLog("[DNS] DoH request failed for %s: %v, falling back to system DNS", hostname, err)
+		return resolveViaSystemDNS(hostname)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		debugLog("[DNS] DoH returned status %d for %s, falling back to system DNS", resp.StatusCode, hostname)
+		return resolveViaSystemDNS(hostname)
+	}
+
+	var dohResp dohResponse
+	if err := json.NewDecoder(resp.Body).Decode(&dohResp); err != nil {
+		debugLog("[DNS] DoH response parse failed for %s: %v, falling back to system DNS", hostname, err)
+		return resolveViaSystemDNS(hostname)
+	}
+
+	for _, answer := range dohResp.Answer {
+		if answer.Type == 1 {
+			dnsCache.Store(hostname, answer.Data)
+			debugLog("[DNS] Resolved %s -> %s via DoH", hostname, answer.Data)
+			return answer.Data, nil
+		}
+	}
+
+	debugLog("[DNS] No A record found via DoH for %s, falling back to system DNS", hostname)
+	return resolveViaSystemDNS(hostname)
+}
+
+func resolveViaSystemDNS(hostname string) (string, error) {
+	debugLog("[DNS] Falling back to system DNS for %s", hostname)
+	addrs, err := net.DefaultResolver.LookupHost(context.Background(), hostname)
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("no addresses found for %s", hostname)
+	}
+	dnsCache.Store(hostname, addrs[0])
+	return addrs[0], nil
+}
+
+func createRelayTransport() *http.Transport {
+	return &http.Transport{
+		TLSClientConfig: &tls.Config{
+			NextProtos: []string{"http/1.1"},
+		},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			if host == "127.0.0.1" || host == "localhost" {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			resolvedIP, err := resolveViaDoH(host)
+			if err != nil {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+		},
 	}
 }
 
@@ -722,7 +825,8 @@ func login(relayURL, email, password string) (string, string, error) {
 		"password": password,
 	})
 
-	resp, err := http.Post(relayURL+"/api/login", "application/json", bytes.NewReader(body))
+	client := &http.Client{Timeout: 10 * time.Second, Transport: createRelayTransport()}
+	resp, err := client.Post(relayURL+"/api/login", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", "", err
 	}
@@ -745,7 +849,7 @@ func startPairing(relayURL, token, localPort string) (*DeviceConfig, error) {
 	req, _ := http.NewRequest("POST", relayURL+"/api/pairing", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: createRelayTransport()}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -798,7 +902,7 @@ func startPairing(relayURL, token, localPort string) (*DeviceConfig, error) {
 }
 
 func pollPairingStatus(relayURL, token, pairingID string, expiresAt time.Time) (*DeviceConfig, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: createRelayTransport()}
 
 	for {
 		if time.Now().After(expiresAt) {
@@ -925,6 +1029,20 @@ func (c *TunnelClient) connect() error {
 		EnableCompression: false,
 		TLSClientConfig: &tls.Config{
 			NextProtos: []string{"http/1.1"}, // Force HTTP/1.1, avoid HTTP/2 (Azure ALPN issue)
+		},
+		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			if host == "127.0.0.1" || host == "localhost" {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			resolvedIP, err := resolveViaDoH(host)
+			if err != nil {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
 		},
 	}
 	conn, _, err := dialer.Dial(wsURL, nil)
