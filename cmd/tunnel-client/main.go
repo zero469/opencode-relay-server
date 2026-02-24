@@ -656,10 +656,37 @@ func ensureOpenCodeRunning(port string) {
 	// Use 127.0.0.1 instead of localhost to avoid IPv6 timeout issues
 	url := fmt.Sprintf("http://127.0.0.1:%s", port)
 
-	resp, err := client.Get(url)
-	if err == nil {
-		resp.Body.Close()
-		return
+	// Retry up to 3 times with 1 second interval
+	for attempt := 1; attempt <= 3; attempt++ {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			debugLog("[detection] OpenCode detected on port %s (attempt %d)", port, attempt)
+			return
+		}
+
+		debugLog("[detection] Attempt %d: failed to reach %s: %v", attempt, url, err)
+
+		if attempt < 3 {
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	// HTTP detection failed, check if opencode process is running
+	if pids := getOpenCodePIDs(); len(pids) > 0 {
+		debugLog("[detection] HTTP check failed but opencode process found: PIDs %v", pids)
+		fmt.Printf("  OpenCode process found (PID: %s), waiting for port %s...\n", strings.Join(pids, ", "), port)
+		// Wait for port to be ready (up to 30 seconds)
+		for i := 0; i < 30; i++ {
+			time.Sleep(1 * time.Second)
+			resp, err := client.Get(url)
+			if err == nil {
+				resp.Body.Close()
+				fmt.Printf("  ✓ OpenCode is ready on port %s\n", port)
+				return
+			}
+		}
+		fmt.Printf("  OpenCode process exists but port %s not responding\n", port)
 	}
 
 	fmt.Printf("  OpenCode not detected on port %s\n", port)
@@ -673,6 +700,42 @@ func ensureOpenCodeRunning(port string) {
 	}
 
 	configureAndStartOpenCode(port, client)
+}
+
+func getOpenCodePIDs() []string {
+	var pids []string
+
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq opencode.exe", "/FO", "CSV", "/NH")
+		output, err := cmd.Output()
+		if err != nil {
+			return nil
+		}
+		// Parse CSV output: "opencode.exe","1234",...
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			parts := strings.Split(line, ",")
+			if len(parts) >= 2 {
+				pid := strings.Trim(parts[1], "\"")
+				pids = append(pids, pid)
+			}
+		}
+	} else {
+		// Use ps + grep for cross-platform compatibility (pgrep behaves differently on macOS)
+		cmd := exec.Command("sh", "-c", "ps -eo pid,comm | grep '[o]pencode$' | awk '{print $1}'")
+		output, err := cmd.Output()
+		if err != nil {
+			return nil
+		}
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			if pid := strings.TrimSpace(line); pid != "" {
+				pids = append(pids, pid)
+			}
+		}
+	}
+
+	return pids
 }
 
 func configureAndStartOpenCode(port string, client *http.Client) {
