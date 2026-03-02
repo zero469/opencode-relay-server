@@ -60,6 +60,13 @@ func main() {
 	}
 
 	authService := services.NewAuthService(db, cfg.JWTSecret, cfg.SingleUserMode)
+
+	if err := authService.EnsureAdminUser(cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		log.Printf("Warning: failed to create admin user: %v", err)
+	} else if cfg.AdminEmail != "" {
+		log.Printf("Admin user ensured: %s", cfg.AdminEmail)
+	}
+
 	deviceService := services.NewDeviceService(db, cfg)
 	emailService := services.NewEmailService(cfg)
 	pairingService := services.NewPairingService(db, cfg)

@@ -54,6 +54,27 @@ func (s *AuthService) GetOrCreateSingleUser() (*models.User, error) {
 	return s.db.CreateUser(email, string(hash))
 }
 
+// EnsureAdminUser creates an admin user if ADMIN_EMAIL and ADMIN_PASSWORD are set
+// and the user doesn't already exist. This is idempotent and safe to call on every startup.
+func (s *AuthService) EnsureAdminUser(email, password string) error {
+	if email == "" || password == "" {
+		return nil
+	}
+
+	existing, _ := s.db.GetUserByEmail(email)
+	if existing != nil {
+		return nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.CreateUser(email, string(hash))
+	return err
+}
+
 func (s *AuthService) AutoLogin() (string, *models.User, error) {
 	if !s.singleUserMode {
 		return "", nil, errors.New("auto login only available in single user mode")

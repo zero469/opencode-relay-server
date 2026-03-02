@@ -15,6 +15,8 @@ type Config struct {
 	ResendAPIKey   string
 	EmailFrom      string
 	SingleUserMode bool
+	AdminEmail     string
+	AdminPassword  string
 }
 
 func Load() *Config {
@@ -29,6 +31,8 @@ func Load() *Config {
 		ResendAPIKey:   getEnv("RESEND_API_KEY", ""),
 		EmailFrom:      getEnv("EMAIL_FROM", "OpenCode <noreply@liuyao16.dpdns.org>"),
 		SingleUserMode: getEnv("SINGLE_USER_MODE", "") == "true",
+		AdminEmail:     getEnv("ADMIN_EMAIL", ""),
+		AdminPassword:  getEnv("ADMIN_PASSWORD", ""),
 	}
 }
 
