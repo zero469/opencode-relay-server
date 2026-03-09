@@ -34,6 +34,12 @@ import (
 	"golang.org/x/term"
 )
 
+var (
+	buildVersion = "dev"
+	buildTime    = "unknown"
+	buildCommit  = "unknown"
+)
+
 const (
 	configDir        = ".opencode-tunnel"
 	authFileName     = "auth.json"
@@ -494,6 +500,8 @@ func doLogin(relay string) *AuthConfig {
 }
 
 func cmdStart() {
+	fmt.Printf("tunnel-client %s (built: %s, commit: %s)\n", buildVersion, buildTime, buildCommit)
+
 	localPort := defaultPort
 	relay := defaultRelay
 	portFromArg := false
@@ -828,6 +836,14 @@ func startOpenCode(config *OpenCodeConfig, port string) bool {
 
 	fmt.Printf("  OpenCode starting (PID: %d)...\n", cmd.Process.Pid)
 
+	// Reap the child process to prevent zombies
+	go func() {
+		cmd.Wait()
+		if logFile != nil {
+			logFile.Close()
+		}
+	}()
+
 	client := &http.Client{Timeout: 2 * time.Second}
 	url := fmt.Sprintf("http://127.0.0.1:%s", port)
 
@@ -1000,6 +1016,13 @@ func pollPairingStatus(relayURL, token, pairingID string, expiresAt time.Time) (
 }
 
 func runTunnel(config *DeviceConfig, localPort string) bool {
+	if !verifyDeviceWithServer(config) {
+		fmt.Println("\n⚠ Device verification failed. Device may have been removed or credentials are invalid.")
+		fmt.Println("  Please re-pair your device.")
+		clearDeviceConfig()
+		return false
+	}
+
 	client := &TunnelClient{
 		config:    config,
 		localPort: localPort,
@@ -1009,11 +1032,12 @@ func runTunnel(config *DeviceConfig, localPort string) bool {
 	}
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 
 	go func() {
-		<-sigChan
-		fmt.Println("\nShutting down...")
+		sig := <-sigChan
+		log.Printf("Received signal: %v (PID: %d)", sig, os.Getpid())
+		fmt.Printf("\nShutting down due to signal: %v...\n", sig)
 		if client.conn != nil {
 			client.conn.Close()
 		}
@@ -1021,6 +1045,36 @@ func runTunnel(config *DeviceConfig, localPort string) bool {
 	}()
 
 	return client.connectWithRetry()
+}
+
+func verifyDeviceWithServer(config *DeviceConfig) bool {
+	reqBody, _ := json.Marshal(map[string]string{
+		"subdomain":     config.Subdomain,
+		"auth_user":     config.AuthUser,
+		"auth_password": config.AuthPassword,
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second, Transport: createRelayTransport()}
+	resp, err := client.Post(config.RelayURL+"/api/device/verify", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		debugLog("[verify] Request failed: %v, proceeding anyway", err)
+		return true
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		debugLog("[verify] Device verified successfully")
+		return true
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	debugLog("[verify] Device verification failed: status=%d, body=%s", resp.StatusCode, string(body))
+
+	if resp.StatusCode == 404 || resp.StatusCode == 401 {
+		return false
+	}
+
+	return true
 }
 
 func (c *TunnelClient) connectWithRetry() bool {
@@ -1068,10 +1122,20 @@ func isAuthError(err error) bool {
 		return false
 	}
 	errStr := err.Error()
-	return strings.Contains(errStr, "401") ||
+	// Check for HTTP status codes in error
+	if strings.Contains(errStr, "401") ||
 		strings.Contains(errStr, "403") ||
+		strings.Contains(errStr, "404") ||
 		strings.Contains(errStr, "Unauthorized") ||
-		strings.Contains(errStr, "Forbidden")
+		strings.Contains(errStr, "Forbidden") {
+		return true
+	}
+	// Check for bad handshake which happens when server rejects before upgrade
+	// This indicates auth/device validation failed
+	if strings.Contains(errStr, "bad handshake") {
+		return true
+	}
+	return false
 }
 
 func clearDeviceConfig() {

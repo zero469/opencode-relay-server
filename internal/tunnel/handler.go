@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -54,7 +55,7 @@ func (h *Handler) HandleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
 	if len(parts) < 4 {
-		http.Error(w, "subdomain required", http.StatusBadRequest)
+		http.Error(w, `{"error":"subdomain_required","message":"Subdomain is required"}`, http.StatusBadRequest)
 		return
 	}
 	subdomain := parts[3]
@@ -62,7 +63,7 @@ func (h *Handler) HandleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 	device, err := h.db.GetDeviceBySubdomain(subdomain)
 	if err != nil {
 		log.Printf("[tunnel] Device not found: %s", subdomain)
-		http.Error(w, "device not found", http.StatusNotFound)
+		http.Error(w, `{"error":"device_not_found","message":"Device not found. Please re-pair your device."}`, http.StatusNotFound)
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *Handler) HandleTunnelConnect(w http.ResponseWriter, r *http.Request) {
 
 	if authUser != device.AuthUser || authPassword != device.AuthPassword {
 		log.Printf("[tunnel] Auth failed for device: %s", subdomain)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Error(w, `{"error":"auth_failed","message":"Authentication failed. Please re-pair your device."}`, http.StatusUnauthorized)
 		return
 	}
 
@@ -85,7 +86,7 @@ func (h *Handler) HandleEventConnect(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
 	if len(parts) < 4 {
-		http.Error(w, "subdomain required", http.StatusBadRequest)
+		http.Error(w, `{"error":"subdomain_required","message":"Subdomain is required"}`, http.StatusBadRequest)
 		return
 	}
 	subdomain := parts[3]
@@ -93,7 +94,7 @@ func (h *Handler) HandleEventConnect(w http.ResponseWriter, r *http.Request) {
 	device, err := h.db.GetDeviceBySubdomain(subdomain)
 	if err != nil {
 		log.Printf("[events] Device not found: %s", subdomain)
-		http.Error(w, "device not found", http.StatusNotFound)
+		http.Error(w, `{"error":"device_not_found","message":"Device not found. Please re-pair your device."}`, http.StatusNotFound)
 		return
 	}
 
@@ -102,7 +103,7 @@ func (h *Handler) HandleEventConnect(w http.ResponseWriter, r *http.Request) {
 
 	if authUser != device.AuthUser || authPassword != device.AuthPassword {
 		log.Printf("[events] Auth failed for device: %s", subdomain)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Error(w, `{"error":"auth_failed","message":"Authentication failed. Please re-pair your device."}`, http.StatusUnauthorized)
 		return
 	}
 
@@ -209,4 +210,43 @@ var hopByHopHeaders = map[string]bool{
 
 func isHopByHopHeader(header string) bool {
 	return hopByHopHeaders[header]
+}
+
+type DeviceVerifyRequest struct {
+	Subdomain    string `json:"subdomain"`
+	AuthUser     string `json:"auth_user"`
+	AuthPassword string `json:"auth_password"`
+}
+
+func (h *Handler) HandleDeviceVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, `{"error":"method_not_allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DeviceVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid_request","message":"Invalid JSON body"}`, http.StatusBadRequest)
+		return
+	}
+
+	device, err := h.db.GetDeviceBySubdomain(req.Subdomain)
+	if err != nil {
+		log.Printf("[verify] Device not found: %s", req.Subdomain)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"valid":false,"error":"device_not_found","message":"Device not found. Please re-pair your device."}`))
+		return
+	}
+
+	if req.AuthUser != device.AuthUser || req.AuthPassword != device.AuthPassword {
+		log.Printf("[verify] Auth failed for device: %s", req.Subdomain)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"valid":false,"error":"auth_failed","message":"Authentication failed. Please re-pair your device."}`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"valid":true}`))
 }
