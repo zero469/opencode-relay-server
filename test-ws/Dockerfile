@@ -1,6 +1,6 @@
 FROM golang:1.23-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
+COPY test-ws/go.mod test-ws/go.sum ./
 RUN go mod download
 COPY test-ws/server/main.go ./main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -o ws-test-server .
