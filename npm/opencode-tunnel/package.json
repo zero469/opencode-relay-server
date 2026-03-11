@@ -1,6 +1,6 @@
 {
   "name": "opencode-tunnel",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "OpenCode Anywhere - Tunnel client for remote access to OpenCode",
   "bin": {
     "opencode-tunnel": "./bin/cli.js"
