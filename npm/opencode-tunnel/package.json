@@ -1,0 +1,39 @@
+{
+  "name": "opencode-tunnel",
+  "version": "0.9.5",
+  "description": "OpenCode Anywhere - Tunnel client for remote access to OpenCode",
+  "bin": {
+    "opencode-tunnel": "./bin/cli.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zero469/opencode-relay-server.git"
+  },
+  "keywords": [
+    "opencode",
+    "tunnel",
+    "remote",
+    "cli"
+  ],
+  "author": "zero469",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zero469/opencode-relay-server/issues"
+  },
+  "homepage": "https://github.com/zero469/opencode-relay-server#readme",
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
