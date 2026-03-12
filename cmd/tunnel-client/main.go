@@ -2101,17 +2101,22 @@ func discoverOpenCodeInstances() []OpenCodeInstance {
 
 	debugLog("[discover] Found %d opencode PIDs: %v", len(pids), pids)
 
+	pidSet := make(map[string]bool)
+	for _, pid := range pids {
+		pidSet[pid] = true
+	}
+
+	portMap := getOpenCodeListeningPorts(pidSet)
+	cwdMap := getOpenCodeCwds(pids)
+
 	var instances []OpenCodeInstance
 	for _, pid := range pids {
-		inst := OpenCodeInstance{PID: pid}
+		inst := OpenCodeInstance{
+			PID:  pid,
+			Port: portMap[pid],
+			Dir:  cwdMap[pid],
+		}
 
-		// Get listening port for this PID
-		inst.Port = getListeningPort(pid)
-
-		// Get working directory for this PID
-		inst.Dir = getProcessCwd(pid)
-
-		// Health check
 		if inst.Port != "" {
 			inst.Healthy = checkOpenCodeHealth(inst.Port)
 		}
@@ -2122,95 +2127,117 @@ func discoverOpenCodeInstances() []OpenCodeInstance {
 	return instances
 }
 
-// getListeningPort finds the listening port for a given PID
-func getListeningPort(pid string) string {
+func getOpenCodeListeningPorts(pidSet map[string]bool) map[string]string {
+	result := make(map[string]string)
+
 	if runtime.GOOS == "windows" {
-		return getListeningPortWindows(pid)
-	}
-	return getListeningPortUnix(pid)
-}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 
-// getListeningPortUnix uses lsof to find listening ports on Unix systems
-func getListeningPortUnix(pid string) string {
-	// macOS lsof -p includes all processes, so we filter by PID in output
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("lsof -i -P -n 2>/dev/null | grep -E '^opencode\\s+%s\\s' | grep LISTEN | awk '{print $9}' | head -1", pid))
-	output, err := cmd.Output()
-	if err != nil {
-		debugLog("[discover] lsof failed for PID %s: %v", pid, err)
-		return ""
-	}
+		cmd := exec.CommandContext(ctx, "cmd", "/c", "netstat -ano | findstr LISTENING")
+		output, err := cmd.Output()
+		if err != nil {
+			debugLog("[discover] netstat failed: %v", err)
+			return result
+		}
 
-	addr := strings.TrimSpace(string(output))
-	if addr == "" {
-		return ""
-	}
-
-	parts := strings.Split(addr, ":")
-	if len(parts) >= 2 {
-		return parts[len(parts)-1]
-	}
-	return ""
-}
-
-// getListeningPortWindows uses netstat to find listening ports on Windows
-func getListeningPortWindows(pid string) string {
-	// netstat -ano | findstr <pid> | findstr LISTENING
-	cmd := exec.Command("cmd", "/c", fmt.Sprintf("netstat -ano | findstr %s | findstr LISTENING", pid))
-	output, err := cmd.Output()
-	if err != nil {
-		debugLog("[discover] netstat failed for PID %s: %v", pid, err)
-		return ""
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			// Format: TCP    0.0.0.0:4096    0.0.0.0:0    LISTENING    <pid>
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 5 {
+				continue
+			}
+			pid := fields[len(fields)-1]
+			if !pidSet[pid] {
+				continue
+			}
 			addr := fields[1]
 			parts := strings.Split(addr, ":")
 			if len(parts) >= 2 {
-				return parts[len(parts)-1]
+				result[pid] = parts[len(parts)-1]
+			}
+		}
+		return result
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lsof", "-i", "-P", "-n")
+	output, err := cmd.Output()
+	if err != nil {
+		debugLog("[discover] lsof -i failed: %v", err)
+		return result
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "LISTEN") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 9 || fields[0] != "opencode" {
+			continue
+		}
+		pid := fields[1]
+		if !pidSet[pid] {
+			continue
+		}
+		addr := fields[8]
+		parts := strings.Split(addr, ":")
+		if len(parts) >= 2 {
+			result[pid] = parts[len(parts)-1]
+		}
+	}
+
+	return result
+}
+
+func getOpenCodeCwds(pids []string) map[string]string {
+	result := make(map[string]string)
+
+	if runtime.GOOS == "windows" {
+		for _, pid := range pids {
+			if cwd := getProcessCwdWindows(pid); cwd != "" {
+				result[pid] = cwd
+			}
+		}
+		return result
+	}
+
+	if runtime.GOOS == "linux" {
+		for _, pid := range pids {
+			cwdLink := fmt.Sprintf("/proc/%s/cwd", pid)
+			if cwd, err := os.Readlink(cwdLink); err == nil {
+				result[pid] = cwd
+			}
+		}
+		return result
+	}
+
+	for _, pid := range pids {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		cmd := exec.CommandContext(ctx, "lsof", "-a", "-d", "cwd", "-p", pid, "-Fn")
+		output, err := cmd.Output()
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "n") {
+				result[pid] = line[1:]
+				break
 			}
 		}
 	}
-	return ""
-}
 
-// getProcessCwd gets the current working directory of a process
-func getProcessCwd(pid string) string {
-	if runtime.GOOS == "windows" {
-		return getProcessCwdWindows(pid)
-	}
-	return getProcessCwdUnix(pid)
-}
-
-// getProcessCwdUnix uses lsof to get cwd on Unix systems
-func getProcessCwdUnix(pid string) string {
-	// Try /proc first (Linux)
-	if runtime.GOOS == "linux" {
-		cwdLink := fmt.Sprintf("/proc/%s/cwd", pid)
-		if cwd, err := os.Readlink(cwdLink); err == nil {
-			return cwd
-		}
-	}
-
-	// Fall back to lsof (macOS and others)
-	// lsof -p <pid> -Fn | grep ^n | grep cwd
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("lsof -p %s 2>/dev/null | grep cwd | awk '{print $NF}'", pid))
-	output, err := cmd.Output()
-	if err != nil {
-		debugLog("[discover] lsof cwd failed for PID %s: %v", pid, err)
-		return ""
-	}
-
-	return strings.TrimSpace(string(output))
+	return result
 }
 
 // getProcessCwdWindows gets cwd on Windows (limited support)
 func getProcessCwdWindows(pid string) string {
-	// Windows doesn't have a simple way to get CWD of another process
-	// We could use WMI or other methods, but for now return empty
 	debugLog("[discover] Windows CWD detection not implemented for PID %s", pid)
 	return "(not available on Windows)"
 }
