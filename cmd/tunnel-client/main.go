@@ -133,9 +133,7 @@ type TunnelEvent struct {
 
 type TunnelClient struct {
 	config       *DeviceConfig
-	localPort    string                       // default port (for backward compatibility)
-	instances    map[string]*OpenCodeInstance // instance_id -> instance (port -> instance for quick lookup)
-	instancesMu  sync.RWMutex
+	localPort    string
 	conn         *websocket.Conn
 	writeMu      sync.Mutex
 	httpClient   *http.Client
@@ -1031,15 +1029,10 @@ func runTunnel(config *DeviceConfig, localPort string) bool {
 	client := &TunnelClient{
 		config:    config,
 		localPort: localPort,
-		instances: make(map[string]*OpenCodeInstance),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
 	}
-
-	client.refreshInstances()
-
-	go client.instanceRefreshLoop()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
@@ -1055,33 +1048,6 @@ func runTunnel(config *DeviceConfig, localPort string) bool {
 	}()
 
 	return client.connectWithRetry()
-}
-
-func (c *TunnelClient) refreshInstances() {
-	instances := discoverOpenCodeInstances()
-
-	c.instancesMu.Lock()
-	defer c.instancesMu.Unlock()
-
-	c.instances = make(map[string]*OpenCodeInstance)
-	for i := range instances {
-		inst := &instances[i]
-		if inst.Port != "" && inst.Healthy {
-			c.instances[inst.Port] = inst
-			debugLog("[instances] Registered instance: port=%s dir=%s", inst.Port, inst.Dir)
-		}
-	}
-
-	debugLog("[instances] Total healthy instances: %d", len(c.instances))
-}
-
-func (c *TunnelClient) instanceRefreshLoop() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		c.refreshInstances()
-	}
 }
 
 func verifyDeviceWithServer(config *DeviceConfig) bool {
@@ -1484,33 +1450,7 @@ func (c *TunnelClient) handleRequest(req *TunnelRequest) {
 		return
 	}
 
-	targetPort := c.localPort
-	targetPath := req.Path
-
-	if strings.HasPrefix(req.Path, "/i/") {
-		parts := strings.SplitN(strings.TrimPrefix(req.Path, "/i/"), "/", 2)
-		if len(parts) >= 1 && parts[0] != "" {
-			instanceID := parts[0]
-			c.instancesMu.RLock()
-			inst, exists := c.instances[instanceID]
-			c.instancesMu.RUnlock()
-
-			if exists {
-				targetPort = inst.Port
-				if len(parts) > 1 {
-					targetPath = "/" + parts[1]
-				} else {
-					targetPath = "/"
-				}
-				debugLog("[debug] Routing to instance %s (port %s): %s", instanceID, targetPort, targetPath)
-			} else {
-				c.sendErrorResponse(req.ID, 404, fmt.Sprintf(`{"error":"instance_not_found","instance_id":"%s"}`, instanceID))
-				return
-			}
-		}
-	}
-
-	localURL := fmt.Sprintf("http://127.0.0.1:%s%s", targetPort, targetPath)
+	localURL := fmt.Sprintf("http://127.0.0.1:%s%s", c.localPort, req.Path)
 
 	requestBody := req.Body
 	if c.config.EncryptionKey != "" && len(req.Body) > 0 {
@@ -1666,36 +1606,31 @@ func (c *TunnelClient) handleLazyImage(req *TunnelRequest) {
 	}
 }
 
-type DiscoverResponse struct {
-	Instances []InstanceInfo `json:"instances"`
-}
-
-type InstanceInfo struct {
-	ID      string `json:"id"`
-	Port    string `json:"port"`
-	Dir     string `json:"dir"`
-	Healthy bool   `json:"healthy"`
-}
-
 func (c *TunnelClient) handleDiscover(req *TunnelRequest) {
-	c.instancesMu.RLock()
-	instances := make([]InstanceInfo, 0, len(c.instances))
-	for _, inst := range c.instances {
-		instances = append(instances, InstanceInfo{
-			ID:      inst.Port,
-			Port:    inst.Port,
-			Dir:     inst.Dir,
-			Healthy: inst.Healthy,
-		})
+	localURL := fmt.Sprintf("http://127.0.0.1:%s/project", c.localPort)
+
+	httpReq, err := http.NewRequest("GET", localURL, nil)
+	if err != nil {
+		c.sendErrorResponse(req.ID, 500, "failed to create request")
+		return
 	}
-	c.instancesMu.RUnlock()
 
-	response := DiscoverResponse{Instances: instances}
-	responseJSON, _ := json.Marshal(response)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		c.sendErrorResponse(req.ID, 502, "opencode unavailable")
+		return
+	}
+	defer resp.Body.Close()
 
-	responseBody := responseJSON
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.sendErrorResponse(req.ID, 502, "failed to read response")
+		return
+	}
+
+	responseBody := body
 	if c.config.EncryptionKey != "" {
-		encrypted, err := encrypt(responseJSON, c.config.EncryptionKey)
+		encrypted, err := encrypt(body, c.config.EncryptionKey)
 		if err != nil {
 			c.sendErrorResponse(req.ID, 500, "failed to encrypt response")
 			return
@@ -1710,7 +1645,7 @@ func (c *TunnelClient) handleDiscover(req *TunnelRequest) {
 
 	tunnelResp := &TunnelResponse{
 		ID:         req.ID,
-		StatusCode: 200,
+		StatusCode: resp.StatusCode,
 		Headers: map[string]string{
 			"Content-Type":   contentType,
 			"Content-Length": fmt.Sprintf("%d", len(responseBody)),
@@ -1720,7 +1655,7 @@ func (c *TunnelClient) handleDiscover(req *TunnelRequest) {
 
 	data, _ := json.Marshal(tunnelResp)
 	c.writeMu.Lock()
-	err := c.conn.WriteMessage(websocket.TextMessage, data)
+	err = c.conn.WriteMessage(websocket.TextMessage, data)
 	c.writeMu.Unlock()
 	if err != nil {
 		debugLog("[debug] Failed to send discover response: %v", err)
@@ -2044,10 +1979,9 @@ type OpenCodeInstance struct {
 	Healthy bool
 }
 
-// cmdDiscover discovers all running opencode instances
 func cmdDiscover() {
 	fmt.Println("\n┌─────────────────────────────────────────────┐")
-	fmt.Println("│  OpenCode Instance Discovery                │")
+	fmt.Println("│  OpenCode Discovery                         │")
 	fmt.Println("└─────────────────────────────────────────────┘")
 	fmt.Println()
 
@@ -2063,10 +1997,6 @@ func cmdDiscover() {
 	if len(servers) == 0 {
 		fmt.Println("  No opencode servers found.")
 		fmt.Println()
-		if len(instances) > 0 {
-			fmt.Printf("  (Found %d opencode process(es) without listening ports)\n", len(instances))
-		}
-		fmt.Println()
 		fmt.Println("  Tips:")
 		fmt.Println("  - Make sure opencode is running (run 'opencode' in a project directory)")
 		fmt.Println("  - Check if the server has started (wait a few seconds)")
@@ -2080,16 +2010,43 @@ func cmdDiscover() {
 		if !inst.Healthy {
 			status = "✗ unreachable"
 		}
-		fmt.Printf("  %d. %s\n", i+1, status)
-		fmt.Printf("     PID:  %s\n", inst.PID)
-		fmt.Printf("     Port: %s\n", inst.Port)
-		fmt.Printf("     Dir:  %s\n", inst.Dir)
+		fmt.Printf("  %d. %s (port %s)\n", i+1, status, inst.Port)
+
+		if inst.Healthy {
+			projects := fetchProjects(inst.Port)
+			if len(projects) > 0 {
+				fmt.Printf("     Projects (%d):\n", len(projects))
+				for _, p := range projects {
+					if p.Worktree == "/" {
+						fmt.Printf("       - global\n")
+					} else {
+						fmt.Printf("       - %s\n", p.Worktree)
+					}
+				}
+			}
+		}
 		fmt.Println()
 	}
+}
 
-	if len(instances) > len(servers) {
-		fmt.Printf("  (Also found %d opencode process(es) without listening ports)\n", len(instances)-len(servers))
+type ProjectInfo struct {
+	ID       string `json:"id"`
+	Worktree string `json:"worktree"`
+}
+
+func fetchProjects(port string) []ProjectInfo {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%s/project", port))
+	if err != nil {
+		return nil
 	}
+	defer resp.Body.Close()
+
+	var projects []ProjectInfo
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		return nil
+	}
+	return projects
 }
 
 // discoverOpenCodeInstances finds all running opencode instances with their ports and directories
@@ -2236,10 +2193,8 @@ func getOpenCodeCwds(pids []string) map[string]string {
 	return result
 }
 
-// getProcessCwdWindows gets cwd on Windows (limited support)
 func getProcessCwdWindows(pid string) string {
-	debugLog("[discover] Windows CWD detection not implemented for PID %s", pid)
-	return "(not available on Windows)"
+	return ""
 }
 
 // checkOpenCodeHealth verifies if an opencode instance is responding
