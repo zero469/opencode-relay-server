@@ -7,11 +7,11 @@ import (
 )
 
 type DeviceService struct {
-	db  *database.DB
+	db  database.Database
 	cfg *config.Config
 }
 
-func NewDeviceService(db *database.DB, cfg *config.Config) *DeviceService {
+func NewDeviceService(db database.Database, cfg *config.Config) *DeviceService {
 	return &DeviceService{db: db, cfg: cfg}
 }
 

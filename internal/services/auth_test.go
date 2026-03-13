@@ -9,16 +9,16 @@ import (
 	"github.com/zero469/opencode-relay-server/internal/services"
 )
 
-func setupTestDB(t *testing.T) *database.DB {
+func setupTestDB(t *testing.T) database.Database {
 	t.Helper()
-	db, err := database.New(":memory:")
+	db, err := database.NewSQLite(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 	return db
 }
 
-func createTestVerificationCode(t *testing.T, db *database.DB, email, code string) {
+func createTestVerificationCode(t *testing.T, db database.Database, email, code string) {
 	t.Helper()
 	err := db.CreateVerificationCode(email, code, time.Now().Add(10*time.Minute))
 	if err != nil {

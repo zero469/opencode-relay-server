@@ -12,10 +12,10 @@ import (
 
 type Handler struct {
 	manager *Manager
-	db      *database.DB
+	db      database.Database
 }
 
-func NewHandler(manager *Manager, db *database.DB) *Handler {
+func NewHandler(manager *Manager, db database.Database) *Handler {
 	manager.SetCallbacks(
 		func(subdomain string) {
 			start := time.Now()

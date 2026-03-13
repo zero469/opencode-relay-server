@@ -22,12 +22,12 @@ var (
 )
 
 type AuthService struct {
-	db             *database.DB
+	db             database.Database
 	jwtSecret      []byte
 	singleUserMode bool
 }
 
-func NewAuthService(db *database.DB, jwtSecret string, singleUserMode bool) *AuthService {
+func NewAuthService(db database.Database, jwtSecret string, singleUserMode bool) *AuthService {
 	return &AuthService{
 		db:             db,
 		jwtSecret:      []byte(jwtSecret),

@@ -21,11 +21,11 @@ var (
 )
 
 type PairingService struct {
-	db  *database.DB
+	db  database.Database
 	cfg *config.Config
 }
 
-func NewPairingService(db *database.DB, cfg *config.Config) *PairingService {
+func NewPairingService(db database.Database, cfg *config.Config) *PairingService {
 	return &PairingService{db: db, cfg: cfg}
 }
 

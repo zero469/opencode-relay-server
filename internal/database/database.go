@@ -13,7 +13,7 @@ type DB struct {
 	*sql.DB
 }
 
-func New(path string) (*DB, error) {
+func NewSQLite(path string) (*DB, error) {
 	var dsn string
 
 	if path == ":memory:" {

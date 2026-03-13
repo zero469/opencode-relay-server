@@ -82,6 +82,7 @@ jobs:
             --resource-group opencode-relay-rg \
             --settings \
               RESEND_API_KEY="${{ secrets.RESEND_API_KEY }}" \
+              MONGODB_URI="${{ secrets.MONGODB_URI }}" \
               PORT=8080 \
               WEBSITES_PORT=8080
 

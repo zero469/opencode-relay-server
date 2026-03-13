@@ -3,24 +3,24 @@ package models
 import "time"
 
 type User struct {
-	ID           int64     `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64     `json:"id" bson:"id"`
+	Email        string    `json:"email" bson:"email"`
+	PasswordHash string    `json:"-" bson:"password_hash"`
+	CreatedAt    time.Time `json:"created_at" bson:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" bson:"updated_at"`
 }
 
 type Device struct {
-	ID           int64     `json:"id"`
-	UserID       int64     `json:"user_id"`
-	Name         string    `json:"name"`
-	Subdomain    string    `json:"subdomain"`
-	AuthUser     string    `json:"auth_user"`
-	AuthPassword string    `json:"auth_password"`
-	Online       bool      `json:"online"`
-	LastSeen     time.Time `json:"last_seen"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64     `json:"id" bson:"id"`
+	UserID       int64     `json:"user_id" bson:"user_id"`
+	Name         string    `json:"name" bson:"name"`
+	Subdomain    string    `json:"subdomain" bson:"subdomain"`
+	AuthUser     string    `json:"auth_user" bson:"auth_user"`
+	AuthPassword string    `json:"auth_password" bson:"auth_password"`
+	Online       bool      `json:"online" bson:"online"`
+	LastSeen     time.Time `json:"last_seen" bson:"last_seen"`
+	CreatedAt    time.Time `json:"created_at" bson:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" bson:"updated_at"`
 }
 
 type SendVerificationRequest struct {
@@ -71,13 +71,13 @@ type MessageResponse struct {
 }
 
 type PairingRequest struct {
-	ID          string    `json:"id"`
-	UserID      int64     `json:"user_id"`
-	PairingCode string    `json:"pairing_code"`
-	Status      string    `json:"status"`
-	DeviceID    *int64    `json:"device_id,omitempty"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string    `json:"id" bson:"id"`
+	UserID      int64     `json:"user_id" bson:"user_id"`
+	PairingCode string    `json:"pairing_code" bson:"pairing_code"`
+	Status      string    `json:"status" bson:"status"`
+	DeviceID    *int64    `json:"device_id,omitempty" bson:"device_id,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at" bson:"expires_at"`
+	CreatedAt   time.Time `json:"created_at" bson:"created_at"`
 }
 
 type CreatePairingResponse struct {
@@ -94,4 +94,13 @@ type PairingStatusResponse struct {
 type CompletePairingRequest struct {
 	PairingCode string `json:"pairing_code"`
 	DeviceName  string `json:"device_name"`
+}
+
+type VerificationCode struct {
+	ID        int64     `json:"id" bson:"id"`
+	Email     string    `json:"email" bson:"email"`
+	Code      string    `json:"code" bson:"code"`
+	ExpiresAt time.Time `json:"expires_at" bson:"expires_at"`
+	Used      bool      `json:"used" bson:"used"`
+	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 }
