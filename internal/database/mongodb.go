@@ -233,22 +233,22 @@ func (m *MongoDB) GetDevicesByUserID(userID int64) ([]*models.Device, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
-	cursor, err := m.devices.Find(ctx, bson.M{"user_id": userID}, opts)
+	cursor, err := m.devices.Find(ctx, bson.M{"user_id": userID})
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	var devices []*models.Device
-	for cursor.Next(ctx) {
-		var device models.Device
-		if err := cursor.Decode(&device); err != nil {
-			return nil, err
-		}
-		devices = append(devices, &device)
+	if err := cursor.All(ctx, &devices); err != nil {
+		return nil, err
 	}
-	return devices, cursor.Err()
+
+	if devices == nil {
+		devices = []*models.Device{}
+	}
+
+	return devices, nil
 }
 
 func (m *MongoDB) UpdateDevice(id int64, name string) (*models.Device, error) {
