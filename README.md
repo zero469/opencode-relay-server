@@ -27,28 +27,14 @@ This repository contains two components:
 - [OpenCode Anywhere iOS App](https://github.com/zero469/opencode-anywhere) - Create an account first
 - [OpenCode](https://github.com/sst/opencode) installed on your computer
 
-### Download & Run
+### Install via npm
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client-darwin-arm64 -o tunnel-client
-chmod +x tunnel-client
-./tunnel-client
-
-# macOS (Intel)
-curl -L https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client-darwin-amd64 -o tunnel-client
-chmod +x tunnel-client
-./tunnel-client
-
-# Linux (x86_64)
-curl -L https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client-linux-amd64 -o tunnel-client
-chmod +x tunnel-client
-./tunnel-client
-
-# Windows (PowerShell)
-Invoke-WebRequest -Uri "https://github.com/zero469/opencode-relay-server/releases/latest/download/tunnel-client-windows-amd64.exe" -OutFile "tunnel-client.exe"
-.\tunnel-client.exe
+npm install -g @zero469/opencode-tunnel
+opencode-tunnel
 ```
+
+Requires [Node.js](https://nodejs.org/) 14+. Works on macOS, Linux, and Windows.
 
 ### What Happens
 
@@ -109,19 +95,19 @@ The tunnel client will:
 
 ```bash
 # Start tunnel (default)
-./tunnel-client
+opencode-tunnel
 
 # Start with custom port
-./tunnel-client -port 8080
+opencode-tunnel -port 8080
 
 # Show status
-./tunnel-client status
+opencode-tunnel status
 
 # Logout and clear credentials  
-./tunnel-client logout
+opencode-tunnel logout
 
 # Help
-./tunnel-client help
+opencode-tunnel help
 ```
 
 ### Configuration Files
@@ -176,10 +162,10 @@ fly deploy
 
 ### Update Tunnel Client
 
-After self-hosting, update the default relay URL in your tunnel client:
+After self-hosting, update the default relay URL:
 
 ```bash
-./tunnel-client -relay https://your-relay.fly.dev
+opencode-tunnel -relay https://your-relay.fly.dev
 ```
 
 ## API Endpoints

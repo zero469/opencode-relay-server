@@ -1,6 +1,5 @@
 #
 # OpenCode Anywhere Client Setup Script for Windows
-# This script sets up tunnel-client on your Windows PC to enable remote access via OpenCode Anywhere app
 #
 # Usage:
 #   irm https://opencode-relay.azurewebsites.net/install.ps1 | iex
@@ -8,58 +7,35 @@
 
 $ErrorActionPreference = "Stop"
 
-$INSTALL_DIR = "$env:USERPROFILE\.opencode-relay"
-
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
     Write-Host $Message -ForegroundColor $Color
 }
 
-function Detect-Platform {
-    $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
-    Write-ColorOutput "Detected platform: windows_$arch" "Cyan"
-    return $arch
+function Check-Npm {
+    try {
+        $null = Get-Command npm -ErrorAction Stop
+        return $true
+    } catch {
+        Write-ColorOutput "npm is not installed." "Red"
+        Write-Host ""
+        Write-Host "Please install Node.js first:"
+        Write-Host ""
+        Write-Host "  Download from: https://nodejs.org/"
+        Write-Host "  Or use winget: winget install OpenJS.NodeJS"
+        Write-Host ""
+        return $false
+    }
 }
 
 function Install-TunnelClient {
-    param([string]$Arch)
+    Write-ColorOutput "Installing opencode-tunnel via npm..." "Cyan"
+    Write-Host ""
     
-    Write-ColorOutput "Installing tunnel-client..." "Cyan"
+    npm install -g @zero469/opencode-tunnel
     
-    if (-not (Test-Path $INSTALL_DIR)) {
-        New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
-    }
-    
-    $fileName = "tunnel-client-windows-$Arch.exe"
-    $urls = @(
-        "https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://ghfast.top/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://mirror.ghproxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName",
-        "https://gh-proxy.com/https://github.com/zero469/opencode-relay-server/releases/latest/download/$fileName"
-    )
-    
-    $downloaded = $false
-    foreach ($url in $urls) {
-        Write-Host "Trying: $url"
-        try {
-            Invoke-WebRequest -Uri $url -OutFile "$INSTALL_DIR\tunnel-client.exe" -UseBasicParsing -TimeoutSec 120
-            $downloaded = $true
-            Write-ColorOutput "Download successful!" "Green"
-            break
-        } catch {
-            Write-ColorOutput "Failed, trying next mirror..." "Yellow"
-        }
-    }
-    
-    if (-not $downloaded) {
-        Write-ColorOutput "All download sources failed. Please download manually from:" "Red"
-        Write-Host "https://github.com/zero469/opencode-relay-server/releases/latest"
-        Write-Host ""
-        Read-Host "Press Enter to exit..."
-        exit 1
-    }
-    
-    Write-ColorOutput "tunnel-client installed to $INSTALL_DIR\tunnel-client.exe" "Green"
+    Write-Host ""
+    Write-ColorOutput "Installation complete!" "Green"
 }
 
 function Main {
@@ -69,17 +45,12 @@ function Main {
     Write-ColorOutput "================================================" "Green"
     Write-Host ""
     
-    $arch = Detect-Platform
-    
-    if (Test-Path "$INSTALL_DIR\tunnel-client.exe") {
-        Write-ColorOutput "tunnel-client already installed at $INSTALL_DIR\tunnel-client.exe" "Yellow"
-        $reinstall = Read-Host "Reinstall? (y/n)"
-        if ($reinstall -eq "y") {
-            Install-TunnelClient -Arch $arch
-        }
-    } else {
-        Install-TunnelClient -Arch $arch
+    if (-not (Check-Npm)) {
+        Read-Host "Press Enter to exit..."
+        exit 1
     }
+    
+    Install-TunnelClient
     
     Write-Host ""
     Write-ColorOutput "================================================" "Green"
@@ -88,17 +59,17 @@ function Main {
     Write-Host ""
     Write-Host "Next step:"
     Write-Host ""
-    Write-Host "Run tunnel-client:"
-    Write-ColorOutput "   $INSTALL_DIR\tunnel-client.exe" "Yellow"
+    Write-Host "Run tunnel client:"
+    Write-ColorOutput "   opencode-tunnel" "Yellow"
     Write-Host ""
     Write-Host "It will guide you through login and pairing automatically."
     Write-Host ""
     Write-ColorOutput "The tunnel will auto-start on boot after pairing." "Cyan"
     Write-Host ""
     
-    $runNow = Read-Host "Run tunnel-client now? (y/n)"
+    $runNow = Read-Host "Run opencode-tunnel now? (y/n)"
     if ($runNow -eq "y") {
-        & "$INSTALL_DIR\tunnel-client.exe"
+        & opencode-tunnel
     }
 }
 
